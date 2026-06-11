@@ -8,7 +8,7 @@ from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
 BASE_DIR = Path(__file__).resolve().parent.parent
-load_dotenv(BASE_DIR / ".env")
+load_dotenv(BASE_DIR / ".env.example")
 
 
 def env(name: str, default: Optional[str] = None) -> str:
@@ -49,6 +49,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'drf_yasg',
     'rest_framework_simplejwt.token_blacklist',
     'apps.common.apps.CommonConfig',
     'apps.authentication.apps.AuthenticationConfig',
@@ -110,6 +111,8 @@ else:
             'CONN_MAX_AGE': env_int("DB_CONN_MAX_AGE", 60),
         }
     }
+    
+print("DB_PASSWORD =", env("DB_PASSWORD"))
 
 
 # Password validation

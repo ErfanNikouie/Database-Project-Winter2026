@@ -1,5 +1,8 @@
+from rest_framework import serializers
 from rest_framework.response import Response
 from rest_framework.views import APIView
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
 
 from apps.forms.serializers.data_serializers import (
     DeleteSerializer,
@@ -11,7 +14,17 @@ from apps.forms.serializers.data_serializers import (
 from apps.forms.services.crud_service import CrudService
 
 
+# This serializer is for documentation purposes only
+class _DataRequestSerializer(serializers.Serializer):
+    form_name = serializers.CharField()
+    data = serializers.DictField()
+
+
 class DataInsertAPIView(APIView):
+    @swagger_auto_schema(
+        request_body=_DataRequestSerializer,
+        responses={201: openapi.Response('Created', schema=openapi.Schema(type=openapi.TYPE_OBJECT))}
+    )
     def post(self, request):
         serializer = InsertSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -20,6 +33,7 @@ class DataInsertAPIView(APIView):
 
 
 class DataUpdateAPIView(APIView):
+    @swagger_auto_schema(request_body=_DataRequestSerializer)
     def post(self, request):
         serializer = UpdateSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -28,6 +42,7 @@ class DataUpdateAPIView(APIView):
 
 
 class DataDeleteAPIView(APIView):
+    @swagger_auto_schema(request_body=_DataRequestSerializer)
     def post(self, request):
         serializer = DeleteSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -36,6 +51,7 @@ class DataDeleteAPIView(APIView):
 
 
 class DataDetailAPIView(APIView):
+    @swagger_auto_schema(request_body=_DataRequestSerializer)
     def post(self, request):
         serializer = DetailSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
@@ -48,6 +64,7 @@ class DataDetailAPIView(APIView):
 
 
 class DataListAPIView(APIView):
+    @swagger_auto_schema(request_body=_DataRequestSerializer)
     def post(self, request):
         serializer = ListSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)

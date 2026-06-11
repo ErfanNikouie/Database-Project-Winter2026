@@ -6,5 +6,5 @@ class CommonConfig(AppConfig):
     name = "apps.common"
 
     def ready(self) -> None:
-        from . import signals  # noqa: F401
+        pass
 
