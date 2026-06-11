@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from django.conf import settings
 from django.contrib.auth.base_user import AbstractBaseUser, BaseUserManager
-from django.contrib.auth.models import PermissionsMixin
 from django.db import models
 from django.utils import timezone
 
@@ -37,14 +36,20 @@ class UserGroup(models.Model):
         return self.name
 
 
-class User(AbstractBaseUser, PermissionsMixin):
+class User(AbstractBaseUser):
     username = models.CharField(max_length=150, unique=True)
     password = models.CharField(max_length=128, db_column="password_hash")
     is_active = models.BooleanField(default=True)
     is_staff = models.BooleanField(default=False)
+    is_superuser = models.BooleanField(default=False)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
-    groups_ref = models.ManyToManyField(UserGroup, related_name="users", blank=True)
+    groups_ref = models.ManyToManyField(
+        UserGroup,
+        related_name="users",
+        blank=True,
+        db_table="user_user_group",
+    )
 
     USERNAME_FIELD = "username"
 

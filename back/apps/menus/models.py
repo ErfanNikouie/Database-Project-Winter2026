@@ -5,7 +5,7 @@ from django.db import models
 class Menu(models.Model):
     name = models.CharField(max_length=120)
     parent_menu = models.ForeignKey("self", null=True, blank=True, on_delete=models.CASCADE, related_name="children")
-    form = models.ForeignKey("forms.Form", on_delete=models.PROTECT, related_name="menus")
+    form = models.ForeignKey("forms.Form", null=True, blank=True, on_delete=models.PROTECT, related_name="menus")
     sort_order = models.IntegerField(default=0)
     is_system = models.BooleanField(default=False)
 

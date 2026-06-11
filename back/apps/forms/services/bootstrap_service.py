@@ -31,12 +31,20 @@ SYSTEM_FORM_DEFINITIONS = [
         ],
     },
     {
+        "name": "UserUserGroup",
+        "table_name": "user_user_group",
+        "fields": [
+            ("user_id", FormFieldType.INTEGER, True),
+            ("usergroup_id", FormFieldType.INTEGER, True),
+        ],
+    },
+    {
         "name": "Menu",
         "table_name": "menu",
         "fields": [
             ("name", FormFieldType.STRING, True),
             ("parent_menu_id", FormFieldType.FOREIGN_KEY, False),
-            ("form_id", FormFieldType.FOREIGN_KEY, True),
+            ("form_id", FormFieldType.FOREIGN_KEY, False),
             ("sort_order", FormFieldType.INTEGER, False),
             ("is_system", FormFieldType.BOOLEAN, True),
         ],
@@ -108,6 +116,7 @@ class BootstrapService:
     def bootstrap(cls) -> None:
         root_group = cls._ensure_root_group()
         cls._ensure_root_user(root_group)
+        form_by_table: dict[str, Form] = {}
 
         for form_definition in SYSTEM_FORM_DEFINITIONS:
             form = Form.objects.update_or_create(
@@ -118,6 +127,7 @@ class BootstrapService:
                     "is_system": True,
                 },
             )[0]
+            form_by_table[form.table_name] = form
 
             for index, (name, field_type, mandatory) in enumerate(form_definition["fields"]):
                 FormField.objects.update_or_create(
@@ -132,26 +142,7 @@ class BootstrapService:
                     },
                 )
 
-            menu = Menu.objects.update_or_create(
-                form=form,
-                defaults={
-                    "name": form_definition["name"],
-                    "sort_order": 0,
-                    "is_system": True,
-                },
-            )[0]
-
-            Permission.objects.update_or_create(
-                menu=menu,
-                group=root_group,
-                defaults={
-                    "can_view": True,
-                    "can_insert": True,
-                    "can_update": True,
-                    "can_delete": True,
-                    "can_print": True,
-                },
-            )
+        cls._ensure_system_menu_tree(root_group, form_by_table)
 
         cls._ensure_default_lookups()
 
@@ -186,4 +177,89 @@ class BootstrapService:
         )
         LookupValue.objects.get_or_create(lookup=boolean_lookup, value="True")
         LookupValue.objects.get_or_create(lookup=boolean_lookup, value="False")
+
+    @classmethod
+    def _ensure_system_menu_tree(cls, root_group: UserGroup, form_by_table: dict[str, Form]) -> None:
+        system_menu = cls._upsert_folder_menu(name="System", parent_menu=None, sort_order=0)
+
+        users_parent = cls._upsert_folder_menu(name="Users", parent_menu=system_menu, sort_order=1)
+        forms_parent = cls._upsert_folder_menu(name="Forms", parent_menu=system_menu, sort_order=3)
+
+        leaf_definitions = [
+            ("Users", "user", users_parent, 1),
+            ("Groups", "user_group", users_parent, 2),
+            ("Group Members", "user_user_group", users_parent, 3),
+            ("Group Permissions", "permission", users_parent, 4),
+            ("Menus", "menu", system_menu, 2),
+            ("Forms", "form", forms_parent, 1),
+            ("Fields", "form_field", forms_parent, 2),
+            ("Lookups", "lookup", forms_parent, 3),
+            ("Lookup Values", "lookup_value", forms_parent, 4),
+        ]
+
+        for menu_name, form_table_name, parent_menu, sort_order in leaf_definitions:
+            form = form_by_table[form_table_name]
+            menu = cls._upsert_form_menu(
+                name=menu_name,
+                form=form,
+                parent_menu=parent_menu,
+                sort_order=sort_order,
+            )
+            cls._upsert_root_group_permission(root_group, menu)
+
+        cls._upsert_root_group_permission(root_group, system_menu)
+        cls._upsert_root_group_permission(root_group, users_parent)
+        cls._upsert_root_group_permission(root_group, forms_parent)
+
+    @staticmethod
+    def _upsert_folder_menu(*, name: str, parent_menu: Menu | None, sort_order: int) -> Menu:
+        menu = (
+            Menu.objects.filter(name=name, parent_menu=parent_menu, form__isnull=True)
+            .order_by("id")
+            .first()
+        )
+        if menu:
+            menu.sort_order = sort_order
+            menu.is_system = True
+            menu.save(update_fields=["sort_order", "is_system"])
+            return menu
+        return Menu.objects.create(
+            name=name,
+            parent_menu=parent_menu,
+            form=None,
+            sort_order=sort_order,
+            is_system=True,
+        )
+
+    @staticmethod
+    def _upsert_form_menu(*, name: str, form: Form, parent_menu: Menu, sort_order: int) -> Menu:
+        menu = Menu.objects.filter(form=form).order_by("id").first()
+        if menu:
+            menu.name = name
+            menu.parent_menu = parent_menu
+            menu.sort_order = sort_order
+            menu.is_system = True
+            menu.save(update_fields=["name", "parent_menu", "sort_order", "is_system"])
+            return menu
+        return Menu.objects.create(
+            name=name,
+            parent_menu=parent_menu,
+            form=form,
+            sort_order=sort_order,
+            is_system=True,
+        )
+
+    @staticmethod
+    def _upsert_root_group_permission(root_group: UserGroup, menu: Menu) -> None:
+        Permission.objects.update_or_create(
+            menu=menu,
+            group=root_group,
+            defaults={
+                "can_view": True,
+                "can_insert": True,
+                "can_update": True,
+                "can_delete": True,
+                "can_print": True,
+            },
+        )
 
