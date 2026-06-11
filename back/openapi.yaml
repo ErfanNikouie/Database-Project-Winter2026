@@ -1,0 +1,1028 @@
+openapi: 3.0.3
+info:
+  title: HRMS Dynamic Enterprise Platform API
+  version: 1.0.0
+  description: A configurable Human Resource Management System where administrators
+    can create and modify business entities entirely from the UI.
+  contact:
+    name: HRMS API Team
+    email: api-team@example.com
+  license:
+    name: Proprietary
+    url: https://example.com/license
+paths:
+  /api/auth/login:
+    post:
+      operationId: auth_login
+      summary: Authenticate user and issue JWT tokens
+      tags:
+      - Authentication
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+            examples:
+              LoginRequest:
+                value:
+                  username: admin
+                  password: password
+                summary: Login Request
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccessEnvelope'
+              examples:
+                LoginResponse:
+                  value:
+                    success: true
+                    data:
+                      access: <jwt-access-token>
+                      refresh: <jwt-refresh-token>
+                      user:
+                        id: 1
+                        username: admin
+                  summary: Login Response
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+  /api/auth/logout:
+    post:
+      operationId: auth_logout
+      summary: Blacklist refresh token and logout
+      tags:
+      - Authentication
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+            examples:
+              LogoutRequest:
+                value:
+                  refresh: <jwt-refresh-token>
+                summary: Logout Request
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/LogoutRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccessEnvelope'
+              examples:
+                LogoutResponse:
+                  value:
+                    success: true
+                    data:
+                      message: Logged out
+                  summary: Logout Response
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+  /api/auth/refresh:
+    post:
+      operationId: auth_refresh
+      summary: Refresh access token
+      tags:
+      - Authentication
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+            examples:
+              RefreshRequest:
+                value:
+                  refresh: <jwt-refresh-token>
+                summary: Refresh Request
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/RefreshRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      - {}
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccessEnvelope'
+              examples:
+                RefreshResponse:
+                  value:
+                    success: true
+                    data:
+                      access: <jwt-access-token>
+                  summary: Refresh Response
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+  /api/data/delete:
+    post:
+      operationId: data_delete
+      summary: Delete a record from any system or dynamic table
+      tags:
+      - Dynamic Data
+      - System
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeleteRequest'
+            examples:
+              DeleteEmployee:
+                value:
+                  form: Employee
+                  data:
+                    id: 1
+                summary: Delete Employee
+              DeleteLookupValue:
+                value:
+                  menu: Lookup Values
+                  data:
+                    id: 12
+                summary: Delete Lookup Value
+              DeleteFormFieldMetadata:
+                value:
+                  menu: Fields
+                  data:
+                    id: 75
+                summary: Delete Form Field Metadata
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DeleteRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DeleteRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccessEnvelope'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+  /api/data/detail:
+    post:
+      operationId: data_detail
+      summary: Retrieve one record by id from any system or dynamic table
+      tags:
+      - Dynamic Data
+      - System
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DetailRequest'
+            examples:
+              DetailEmployee:
+                value:
+                  form: Employee
+                  id: 15
+                summary: Detail Employee
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/DetailRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/DetailRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccessEnvelope'
+              examples:
+                DetailResponse:
+                  value:
+                    success: true
+                    data:
+                      id: 15
+                      first_name: John
+                  summary: Detail Response
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+  /api/data/insert:
+    post:
+      operationId: data_insert
+      summary: Insert a record into any system or dynamic table
+      tags:
+      - Dynamic Data
+      - System
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/InsertRequest'
+            examples:
+              InsertEmployee:
+                value:
+                  form: Employee
+                  data:
+                    first_name: John
+                    last_name: Doe
+                summary: Insert Employee
+              InsertContract:
+                value:
+                  form: Contract
+                  data:
+                    employee_id: 12
+                    start_date: '2026-01-01'
+                    salary: 2500
+                summary: Insert Contract
+              InsertTraining:
+                value:
+                  form: Training
+                  data:
+                    title: Leadership 101
+                    hours: 16
+                summary: Insert Training
+              InsertProject:
+                value:
+                  form: Project
+                  data:
+                    name: HRMS Rollout
+                    budget: 45000
+                summary: Insert Project
+              InsertAsset:
+                value:
+                  form: Asset
+                  data:
+                    asset_code: LT-1001
+                    assigned_to: 12
+                summary: Insert Asset
+              InsertMedicalRecord:
+                value:
+                  form: MedicalRecord
+                  data:
+                    employee_id: 12
+                    record_date: '2026-06-01'
+                    status: Healthy
+                summary: Insert MedicalRecord
+              InsertPerformanceEvaluation:
+                value:
+                  form: PerformanceEvaluation
+                  data:
+                    employee_id: 12
+                    score: 92
+                    period: 2026-Q2
+                summary: Insert PerformanceEvaluation
+              InsertFormMetadata:
+                value:
+                  menu: Forms
+                  data:
+                    name: Employee
+                    table_name: employee
+                    is_system: false
+                summary: Insert Form Metadata
+              InsertFormFieldMetadata:
+                value:
+                  menu: Fields
+                  data:
+                    form_id: 10
+                    name: first_name
+                    type: String
+                    mandatory: true
+                summary: Insert Form Field Metadata
+              InsertMenuMetadata:
+                value:
+                  menu: Menus
+                  data:
+                    name: Employees
+                    form_id: 10
+                    sort_order: 1
+                summary: Insert Menu Metadata
+              InsertPermissionMetadata:
+                value:
+                  menu: Group Permissions
+                  data:
+                    menu_id: 20
+                    group_id: 2
+                    can_view: true
+                    can_insert: true
+                    can_update: true
+                    can_delete: false
+                    can_print: true
+                summary: Insert Permission Metadata
+              InsertLookupMetadata:
+                value:
+                  menu: Lookups
+                  data:
+                    name: ContractType
+                    description: Contract type list
+                summary: Insert Lookup Metadata
+              InsertLookupValueMetadata:
+                value:
+                  menu: Lookup Values
+                  data:
+                    lookup_id: 4
+                    value: Permanent
+                summary: Insert Lookup Value Metadata
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/InsertRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/InsertRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccessEnvelope'
+              examples:
+                InsertSuccess:
+                  value:
+                    success: true
+                    data:
+                      id: 1
+                      first_name: John
+                      last_name: Doe
+                  summary: Insert Success
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+  /api/data/list:
+    post:
+      operationId: data_list
+      summary: List records from any system or dynamic table with filtering and paging
+      tags:
+      - Dynamic Data
+      - System
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ListRequest'
+            examples:
+              ListEmployee:
+                value:
+                  form: Employee
+                  limit: 50
+                  offset: 0
+                  sort_by: id
+                  sort_direction: asc
+                  filters:
+                    salary: '>1000'
+                    name: John|Ali
+                summary: List Employee
+              ListMenus(Metadata):
+                value:
+                  menu: Menus
+                  limit: 50
+                  offset: 0
+                  sort_by: id
+                  sort_direction: asc
+                  filters: {}
+                summary: List Menus (Metadata)
+              ListPermissions(Metadata):
+                value:
+                  menu: Group Permissions
+                  limit: 50
+                  offset: 0
+                  sort_by: id
+                  sort_direction: asc
+                  filters:
+                    group_id: 2
+                summary: List Permissions (Metadata)
+              ListForms(Metadata):
+                value:
+                  menu: Forms
+                  limit: 50
+                  offset: 0
+                  sort_by: id
+                  sort_direction: asc
+                  filters:
+                    is_system: false
+                summary: List Forms (Metadata)
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/ListRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/ListRequest'
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericListSuccessEnvelope'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+  /api/data/update:
+    post:
+      operationId: data_update
+      summary: Update a record in any system or dynamic table
+      tags:
+      - Dynamic Data
+      - System
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateRequest'
+            examples:
+              UpdateEmployee:
+                value:
+                  form: Employee
+                  data:
+                    id: 1
+                    first_name: Updated
+                summary: Update Employee
+              UpdateFormMetadata:
+                value:
+                  menu: Forms
+                  data:
+                    id: 9
+                    description: Updated description
+                summary: Update Form Metadata
+              UpdatePermissionMetadata:
+                value:
+                  menu: Group Permissions
+                  data:
+                    id: 5
+                    can_delete: false
+                summary: Update Permission Metadata
+              UpdateLookupMetadata:
+                value:
+                  menu: Lookups
+                  data:
+                    id: 4
+                    description: Updated lookup
+                summary: Update Lookup Metadata
+          application/x-www-form-urlencoded:
+            schema:
+              $ref: '#/components/schemas/UpdateRequest'
+          multipart/form-data:
+            schema:
+              $ref: '#/components/schemas/UpdateRequest'
+        required: true
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/GenericSuccessEnvelope'
+          description: ''
+        '400':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '409':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '422':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '500':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+  /api/forms/{form_name}/schema:
+    get:
+      operationId: form_runtime_schema
+      summary: Get runtime schema for a form
+      parameters:
+      - in: path
+        name: form_name
+        schema:
+          type: string
+        description: Form table name, for example 'employee'.
+        required: true
+      tags:
+      - Forms
+      - Dynamic Data
+      security:
+      - jwtAuth: []
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FormSchemaResponse'
+              examples:
+                FormSchemaResponse:
+                  value:
+                    form: employee
+                    table: employee
+                    fields:
+                    - name: first_name
+                      type: String
+                      required: true
+                      unique: false
+                    - name: last_name
+                      type: String
+                      required: true
+                      unique: false
+                  summary: Form Schema Response
+          description: ''
+        '404':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '401':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+        '403':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorEnvelope'
+          description: ''
+components:
+  schemas:
+    DeleteRequest:
+      type: object
+      properties:
+        menu:
+          type: string
+          minLength: 1
+          maxLength: 120
+        form:
+          type: string
+          minLength: 1
+          maxLength: 100
+        data:
+          type: object
+          additionalProperties: {}
+      required:
+      - data
+    DetailRequest:
+      type: object
+      properties:
+        menu:
+          type: string
+          minLength: 1
+          maxLength: 120
+        form:
+          type: string
+          minLength: 1
+          maxLength: 100
+        id:
+          type: integer
+          minimum: 1
+      required:
+      - id
+    ErrorDetail:
+      type: object
+      properties:
+        field:
+          type: string
+        message:
+          type: string
+      required:
+      - message
+    ErrorEnvelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+          default: false
+        error:
+          $ref: '#/components/schemas/ErrorDetail'
+      required:
+      - error
+    FormSchemaField:
+      type: object
+      properties:
+        name:
+          type: string
+        type:
+          type: string
+        required:
+          type: boolean
+        unique:
+          type: boolean
+        lookup_id:
+          type: integer
+          nullable: true
+        foreign_key_table:
+          type: string
+        foreign_key_field:
+          type: string
+      required:
+      - name
+      - required
+      - type
+      - unique
+    FormSchemaResponse:
+      type: object
+      properties:
+        form:
+          type: string
+        table:
+          type: string
+        fields:
+          type: array
+          items:
+            $ref: '#/components/schemas/FormSchemaField'
+      required:
+      - fields
+      - form
+      - table
+    GenericListData:
+      type: object
+      properties:
+        count:
+          type: integer
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: {}
+      required:
+      - count
+      - items
+    GenericListSuccessEnvelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+          default: true
+        data:
+          $ref: '#/components/schemas/GenericListData'
+      required:
+      - data
+    GenericSuccessEnvelope:
+      type: object
+      properties:
+        success:
+          type: boolean
+          default: true
+        data:
+          type: object
+          additionalProperties: {}
+      required:
+      - data
+    InsertRequest:
+      type: object
+      properties:
+        menu:
+          type: string
+          minLength: 1
+          maxLength: 120
+        form:
+          type: string
+          minLength: 1
+          maxLength: 100
+        data:
+          type: object
+          additionalProperties: {}
+      required:
+      - data
+    ListRequest:
+      type: object
+      properties:
+        menu:
+          type: string
+          minLength: 1
+          maxLength: 120
+        form:
+          type: string
+          minLength: 1
+          maxLength: 100
+        limit:
+          type: integer
+          maximum: 1000
+          minimum: 1
+          default: 50
+        offset:
+          type: integer
+          minimum: 0
+          default: 0
+        sort_by:
+          type: string
+          minLength: 1
+          default: id
+          maxLength: 100
+        sort_direction:
+          enum:
+          - asc
+          - desc
+          type: string
+          description: |-
+            * `asc` - asc
+            * `desc` - desc
+          x-spec-enum-id: eadf035d1a023852
+          default: asc
+        filters:
+          type: object
+          additionalProperties: {}
+    LoginRequest:
+      type: object
+      properties:
+        username:
+          type: string
+          minLength: 1
+          maxLength: 150
+        password:
+          type: string
+          minLength: 1
+          maxLength: 128
+      required:
+      - password
+      - username
+    LogoutRequest:
+      type: object
+      properties:
+        refresh:
+          type: string
+          minLength: 1
+      required:
+      - refresh
+    RefreshRequest:
+      type: object
+      properties:
+        refresh:
+          type: string
+          minLength: 1
+      required:
+      - refresh
+    UpdateRequest:
+      type: object
+      properties:
+        menu:
+          type: string
+          minLength: 1
+          maxLength: 120
+        form:
+          type: string
+          minLength: 1
+          maxLength: 100
+        data:
+          type: object
+          additionalProperties: {}
+      required:
+      - data
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+    jwtAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+tags:
+- name: Authentication
+  description: JWT authentication APIs.
+- name: Users
+  description: User management metadata APIs.
+- name: Groups
+  description: User group management metadata APIs.
+- name: Menus
+  description: Menu configuration APIs.
+- name: Forms
+  description: Form metadata and runtime schema APIs.
+- name: Form Fields
+  description: Form field metadata APIs.
+- name: Permissions
+  description: Menu-to-group permission APIs.
+- name: Lookups
+  description: Lookup and lookup value APIs.
+- name: Dynamic Data
+  description: Generic CRUD APIs over system and dynamic tables.
+- name: Reports
+  description: Reporting and dashboard APIs.
+- name: System
+  description: Platform-level endpoints and system metadata.
+x-dynamic-forms: []

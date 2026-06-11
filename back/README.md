@@ -6,6 +6,7 @@ This backend implements a hybrid HRMS architecture:
 - Runtime business tables via SQLAlchemy Core
 - Generic CRUD endpoints (`/api/data/*`) for both categories
 - JWT authentication with refresh and blacklist logout
+- OpenAPI 3 docs with Swagger UI and ReDoc
 
 ## Core Apps
 
@@ -40,6 +41,16 @@ On `post_migrate`, system metadata is auto-created:
 - `POST /api/data/delete`
 - `POST /api/data/detail`
 - `POST /api/data/list`
+
+### Runtime Form Schema API
+
+- `GET /api/forms/{form_name}/schema`
+
+### OpenAPI Endpoints
+
+- `GET /api/schema/` (OpenAPI JSON)
+- `GET /api/docs/` (Swagger UI)
+- `GET /api/redoc/` (ReDoc)
 
 ## Request Examples
 
@@ -93,6 +104,15 @@ python manage.py makemigrations
 python manage.py migrate
 python manage.py runserver
 ```
+
+## Swagger Configuration
+
+- `ENABLE_SWAGGER=True|False` controls whether schema/docs routes are exposed.
+- `SWAGGER_REQUIRE_AUTH=True|False` enforces auth for docs endpoints.
+- `SWAGGER_SCHEMA_CACHE_TIMEOUT=300` caches `/api/schema/` output in seconds.
+
+Dynamic form components are injected into OpenAPI from runtime metadata (`Form` + `FormField`) via
+`apps/forms/services/dynamic_openapi_service.py`, so new forms appear in schema components after refresh.
 
 ## Production Notes
 

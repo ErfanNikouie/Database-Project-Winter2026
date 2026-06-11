@@ -109,6 +109,16 @@ SYSTEM_FORM_DEFINITIONS = [
     },
 ]
 
+SYSTEM_FIELD_OPTIONS = {
+    ("menu", "parent_menu_id"): {"foreign_key_table": "menu", "foreign_key_field": "id"},
+    ("menu", "form_id"): {"foreign_key_table": "form", "foreign_key_field": "id"},
+    ("form_field", "form_id"): {"foreign_key_table": "form", "foreign_key_field": "id"},
+    ("form_field", "lookup_id"): {"foreign_key_table": "lookup", "foreign_key_field": "id"},
+    ("permission", "menu_id"): {"foreign_key_table": "menu", "foreign_key_field": "id"},
+    ("permission", "group_id"): {"foreign_key_table": "user_group", "foreign_key_field": "id"},
+    ("lookup_value", "lookup_id"): {"foreign_key_table": "lookup", "foreign_key_field": "id"},
+}
+
 
 class BootstrapService:
     @classmethod
@@ -130,6 +140,7 @@ class BootstrapService:
             form_by_table[form.table_name] = form
 
             for index, (name, field_type, mandatory) in enumerate(form_definition["fields"]):
+                field_options = SYSTEM_FIELD_OPTIONS.get((form.table_name, name), {})
                 FormField.objects.update_or_create(
                     form=form,
                     name=name,
@@ -137,6 +148,10 @@ class BootstrapService:
                         "type": field_type,
                         "mandatory": mandatory,
                         "unique": False,
+                        "lookup_id": field_options.get("lookup_id"),
+                        "foreign_key_table": field_options.get("foreign_key_table", ""),
+                        "foreign_key_field": field_options.get("foreign_key_field", "id"),
+                        "default_value": "",
                         "sort_order": index,
                         "is_system": True,
                     },

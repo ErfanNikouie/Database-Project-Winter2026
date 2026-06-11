@@ -87,10 +87,12 @@ class ValidationService:
 
     @staticmethod
     def _validate_foreign_key(field: FormField, value) -> None:
-        if field.type != "ForeignKey" or value is None:
+        if field.type != "ForeignKey":
             return
         if not field.foreign_key_table:
             raise ValidationException("Foreign key table is missing", field=field.name)
+        if value is None:
+            return
 
         engine = get_engine()
         inspector = inspect(engine)

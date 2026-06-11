@@ -42,6 +42,7 @@ class CrudService:
     @classmethod
     def insert(cls, *, user, table_name: str, data: dict) -> dict:
         PermissionService.assert_table_permission(user, table_name, "insert")
+        data = cls._normalize_payload(table_name, data, is_update=False)
         form = ValidationService.get_form_or_raise(table_name)
         ValidationService.validate_payload(form, data, is_update=False)
 
@@ -52,6 +53,7 @@ class CrudService:
     @classmethod
     def update(cls, *, user, table_name: str, data: dict) -> dict:
         PermissionService.assert_table_permission(user, table_name, "update")
+        data = cls._normalize_payload(table_name, data, is_update=True)
         if "id" not in data:
             raise ValidationException("id is required for update", field="id")
 
@@ -162,15 +164,37 @@ class CrudService:
     def _list_system(cls, table_name: str, limit: int, offset: int, sort_by: str, sort_direction: str, filters: dict) -> ListResult:
         model = SYSTEM_MODELS[table_name]
         qs = model.objects.all()
-        allowed_fields = {
-            field.name
+        field_by_name = {
+            field.name: field
             for field in model._meta.get_fields()
-            if (getattr(field, "concrete", False) and not getattr(field, "many_to_many", False))
-            or getattr(field, "many_to_many", False)
+            if getattr(field, "concrete", False)
         }
+        allowed_fields = set()
+        for field in model._meta.get_fields():
+            if getattr(field, "many_to_many", False):
+                allowed_fields.add(field.name)
+                continue
+            if getattr(field, "concrete", False):
+                allowed_fields.add(field.name)
+                attname = getattr(field, "attname", None)
+                if attname:
+                    allowed_fields.add(attname)
 
         if sort_by not in allowed_fields:
             raise ValidationException("Invalid sort column", field="sort_by")
+
+        expression_like = any(
+            isinstance(value, str) and any(token in value for token in ("&", "|", "(", ")", ">", "<", "!=", "="))
+            for value in (filters or {}).values()
+        )
+        if expression_like:
+            form = ValidationService.get_form_or_raise(table_name)
+            normalized_sort_by = cls._normalize_system_column_name(field_by_name, sort_by)
+            normalized_filters = {
+                cls._normalize_system_column_name(field_by_name, key): value
+                for key, value in (filters or {}).items()
+            }
+            return cls._list_dynamic(form, limit, offset, normalized_sort_by, sort_direction, normalized_filters)
 
         if filters:
             for key, value in filters.items():
@@ -188,9 +212,46 @@ class CrudService:
         return ListResult(count=count, items=items)
 
     @staticmethod
+    def _normalize_system_column_name(field_by_name: dict[str, Any], key: str) -> str:
+        field = field_by_name.get(key)
+        if field is None:
+            return key
+        return getattr(field, "attname", key) or key
+
+    @staticmethod
     def _model_to_row(instance) -> dict:
         payload = model_to_dict(instance)
+        for field in instance._meta.fields:
+            if getattr(field, "is_relation", False) and getattr(field, "many_to_one", False):
+                payload[field.attname] = getattr(instance, field.attname)
+                payload.pop(field.name, None)
         payload["id"] = instance.id
+        return payload
+
+    @classmethod
+    def _normalize_payload(cls, table_name: str, data: dict, is_update: bool) -> dict:
+        payload = dict(data)
+        if table_name != "form_field":
+            return payload
+
+        foreign_key_form = payload.pop("foreign_key_form", None)
+        field_type = payload.get("type")
+
+        if foreign_key_form is not None:
+            if field_type and field_type != "ForeignKey":
+                raise ValidationException("foreign_key_form is only valid for ForeignKey fields", field="foreign_key_form")
+            referenced_form = (
+                Form.objects.filter(name=foreign_key_form).order_by("id").first()
+                or Form.objects.filter(table_name=foreign_key_form).order_by("id").first()
+            )
+            if not referenced_form:
+                raise ValidationException("Unknown foreign key form", field="foreign_key_form")
+            payload["foreign_key_table"] = referenced_form.table_name
+
+        # Keep foreign_key_field optional; id is the default target.
+        if payload.get("type") == "ForeignKey" and not payload.get("foreign_key_field"):
+            payload["foreign_key_field"] = "id"
+
         return payload
 
     @classmethod

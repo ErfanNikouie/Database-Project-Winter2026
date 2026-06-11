@@ -49,6 +49,8 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'rest_framework',
+    'drf_spectacular',
+    'drf_spectacular_sidecar',
     'rest_framework_simplejwt.token_blacklist',
     'apps.common.apps.CommonConfig',
     'apps.authentication.apps.AuthenticationConfig',
@@ -140,16 +142,69 @@ REST_FRAMEWORK = {
         'rest_framework.permissions.IsAuthenticated',
     ),
     'EXCEPTION_HANDLER': 'apps.common.api.exception_handler.custom_exception_handler',
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
 }
 
 from datetime import timedelta  # noqa: E402
 
+JWT_ACCESS_TOKEN_TIMEOUT_SECONDS = env_int("JWT_ACCESS_TOKEN_TIMEOUT_SECONDS", 86400)
+JWT_REFRESH_TOKEN_TIMEOUT_SECONDS = env_int("JWT_REFRESH_TOKEN_TIMEOUT_SECONDS", 86400)
+
 SIMPLE_JWT = {
-    'ACCESS_TOKEN_LIFETIME': timedelta(minutes=15),
-    'REFRESH_TOKEN_LIFETIME': timedelta(days=7),
+    'ACCESS_TOKEN_LIFETIME': timedelta(seconds=JWT_ACCESS_TOKEN_TIMEOUT_SECONDS),
+    'REFRESH_TOKEN_LIFETIME': timedelta(seconds=JWT_REFRESH_TOKEN_TIMEOUT_SECONDS),
     'ROTATE_REFRESH_TOKENS': True,
     'BLACKLIST_AFTER_ROTATION': True,
     'AUTH_HEADER_TYPES': ('Bearer',),
+}
+
+ENABLE_SWAGGER = env_bool("ENABLE_SWAGGER", True)
+SWAGGER_REQUIRE_AUTH = env_bool("SWAGGER_REQUIRE_AUTH", True)
+SWAGGER_SCHEMA_CACHE_TIMEOUT = env_int("SWAGGER_SCHEMA_CACHE_TIMEOUT", 300)
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': env('OPENAPI_TITLE', 'HRMS Dynamic Enterprise Platform API'),
+    'DESCRIPTION': env(
+        'OPENAPI_DESCRIPTION',
+        'A configurable Human Resource Management System where administrators can create and modify business entities entirely from the UI.',
+    ),
+    'VERSION': env('OPENAPI_VERSION', '1.0.0'),
+    'SERVE_INCLUDE_SCHEMA': False,
+    'SWAGGER_UI_DIST': 'SIDECAR',
+    'SWAGGER_UI_FAVICON_HREF': 'SIDECAR',
+    'REDOC_DIST': 'SIDECAR',
+    'COMPONENT_SPLIT_REQUEST': True,
+    'CONTACT': {
+        'name': env('OPENAPI_CONTACT_NAME', 'HRMS API Team'),
+        'email': env('OPENAPI_CONTACT_EMAIL', 'api-team@example.com'),
+    },
+    'LICENSE': {
+        'name': env('OPENAPI_LICENSE_NAME', 'Proprietary'),
+        'url': env('OPENAPI_LICENSE_URL', 'https://example.com/license'),
+    },
+    'APPEND_COMPONENTS': {
+        'securitySchemes': {
+            'BearerAuth': {
+                'type': 'http',
+                'scheme': 'bearer',
+                'bearerFormat': 'JWT',
+            }
+        }
+    },
+    'SECURITY': [{'BearerAuth': []}] if SWAGGER_REQUIRE_AUTH else [],
+    'POSTPROCESSING_HOOKS': [
+        'apps.forms.services.dynamic_openapi_service.inject_dynamic_form_schemas',
+    ],
+    'TAGS': [
+        {'name': 'Authentication', 'description': 'JWT authentication APIs.'},
+        {'name': 'Dynamic Data', 'description': 'Generic CRUD APIs over system and dynamic tables.'},
+        {'name': 'Forms', 'description': 'Form metadata and runtime schema APIs.'},
+    ],
+    'SWAGGER_UI_SETTINGS': {
+        'persistAuthorization': True,
+        'displayRequestDuration': True,
+        'docExpansion': 'none',
+    },
 }
 
 

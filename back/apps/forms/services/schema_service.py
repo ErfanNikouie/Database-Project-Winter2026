@@ -7,7 +7,7 @@ from sqlalchemy import (
     BIGINT,
     BOOLEAN,
     DATE,
-    DATETIME,
+    DateTime,
     DECIMAL,
     FLOAT,
     INTEGER,
@@ -49,8 +49,8 @@ class SchemaService:
 
         columns = [
             Column("id", BIGINT, primary_key=True, autoincrement=True),
-            Column("created_at", DATETIME, nullable=False, server_default=text("CURRENT_TIMESTAMP")),
-            Column("updated_at", DATETIME, nullable=False, server_default=text("CURRENT_TIMESTAMP")),
+            Column("created_at", DateTime(), nullable=False, server_default=text("CURRENT_TIMESTAMP")),
+            Column("updated_at", DateTime(), nullable=False, server_default=text("CURRENT_TIMESTAMP")),
         ]
 
         for field in form.fields.order_by("sort_order", "id"):
@@ -151,7 +151,7 @@ class SchemaService:
             "String": VARCHAR(255),
             "Text": TEXT,
             "Date": DATE,
-            "DateTime": DATETIME,
+            "DateTime": DateTime(),
             "Boolean": BOOLEAN,
             "Lookup": BIGINT,
             "ForeignKey": BIGINT,
