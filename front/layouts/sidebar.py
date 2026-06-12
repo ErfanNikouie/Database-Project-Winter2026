@@ -48,17 +48,20 @@ def _build_menu_node(node: dict[str, Any], selected_menu_id: int | None):
 
     href = f"/menu/{node['id']}"
     is_active = selected_menu_id == node["id"]
-    return dmc.Anchor(
-        dmc.Button(
-            node["name"],
-            fullWidth=True,
-            justify="space-between",
-            leftSection=DashIconify(icon="mdi:table", width=16),
-            variant="filled" if is_active else "light",
-            color="green" if is_active else "indigo",
-            className="menu-link-button",
+    return html.Div(
+        dmc.Anchor(
+            dmc.Button(
+                node["name"],
+                fullWidth=True,
+                justify="space-between",
+                leftSection=DashIconify(icon="mdi:table", width=16),
+                variant="filled" if is_active else "light",
+                color="green" if is_active else "indigo",
+                className="menu-link-button",
+            ),
+            href=href,
+            underline="never",
         ),
-        href=href,
-        underline="never",
+        className="menu-leaf",
     )
 

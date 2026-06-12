@@ -13,6 +13,8 @@ def build_main_layout() -> html.Div:
             dcc.Store(id="ui-store", storage_type="session", data=default_ui_store()),
             dcc.Store(id="table-store", storage_type="memory", data={"rows": [], "count": 0}),
             dcc.Store(id="schema-store", storage_type="memory", data={}),
+            dcc.Store(id="active-menu-id", storage_type="memory", data=None),
+            dcc.Store(id="crud-action-store", storage_type="memory", data={"ts": 0, "action": ""}),
             dcc.Store(id="notifications-store", storage_type="memory", data=[]),
             html.Div(id="notification-host"),
             build_shell_layout(),

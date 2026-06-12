@@ -62,6 +62,10 @@ body {
   transition: transform 0.12s ease;
 }
 
+.menu-leaf {
+  margin: 0.2rem 0 0.95rem;
+}
+
 .menu-link-button:hover {
   transform: translateX(2px);
 }

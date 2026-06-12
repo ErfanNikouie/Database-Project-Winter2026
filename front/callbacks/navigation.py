@@ -54,3 +54,17 @@ def open_profile_page(n_clicks: int | None):
     return "/profile"
 
 
+@callback(
+    Output("active-menu-id", "data"),
+    Input("_pages_location", "pathname"),
+    prevent_initial_call=False,
+)
+def sync_active_menu_id(pathname: str | None):
+    if not pathname or not pathname.startswith("/menu/"):
+        return no_update
+    try:
+        return int(pathname.rsplit("/", maxsplit=1)[-1])
+    except ValueError:
+        return no_update
+
+

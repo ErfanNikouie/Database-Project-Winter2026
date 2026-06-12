@@ -272,6 +272,8 @@ class CrudService:
     @staticmethod
     def _model_to_row(instance) -> dict:
         payload = model_to_dict(instance)
+        for field in instance._meta.many_to_many:
+            payload[field.name] = list(getattr(instance, field.name).values_list("id", flat=True))
         for field in instance._meta.fields:
             if getattr(field, "is_relation", False) and getattr(field, "many_to_one", False):
                 payload[field.attname] = getattr(instance, field.attname)
