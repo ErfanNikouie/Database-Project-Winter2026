@@ -61,10 +61,10 @@ def open_profile_page(n_clicks: int | None):
 )
 def sync_active_menu_id(pathname: str | None):
     if not pathname or not pathname.startswith("/menu/"):
-        return no_update
+        return None
     try:
         return int(pathname.rsplit("/", maxsplit=1)[-1])
     except ValueError:
-        return no_update
+        return None
 
 

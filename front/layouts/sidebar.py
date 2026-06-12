@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 import dash_mantine_components as dmc
-from dash import html
+from dash import dcc, html
 from dash_iconify import DashIconify
 
 
@@ -56,7 +56,7 @@ def _build_menu_node(node: dict[str, Any], selected_menu_id: int | None, expande
     href = f"/menu/{node['id']}"
     is_active = selected_menu_id == node["id"]
     return html.Div(
-        dmc.Anchor(
+        dcc.Link(
             dmc.Button(
                 node["name"],
                 fullWidth=True,
@@ -67,7 +67,8 @@ def _build_menu_node(node: dict[str, Any], selected_menu_id: int | None, expande
                 className="menu-link-button",
             ),
             href=href,
-            underline="never",
+            refresh=False,
+            style={"textDecoration": "none"},
         ),
         className="menu-leaf",
     )

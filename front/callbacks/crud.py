@@ -22,7 +22,7 @@ from utils.models import ApiError
     Output("dynamic-filter-section", "children"),
     Output("insert-form-container", "children"),
     Output("edit-form-container", "children"),
-    Input("active-menu-id-hint", "data"),
+    Input("active-menu-id-hint", "data", allow_optional=True),
     State("ui-store", "data"),
     State("auth-store", "data"),
     prevent_initial_call=True,
@@ -78,9 +78,9 @@ def load_schema(active_menu_id: str | None, ui_store: dict, auth_data: dict):
     Output("dynamic-grid-wrapper", "children"),
     Output("dynamic-page-error", "children"),
     Input({"type": "toolbar-action", "action": "refresh", "index": ALL}, "n_clicks"),
-    Input("active-menu-id-hint", "data"),
+    Input("active-menu-id-hint", "data", allow_optional=True),
     Input("schema-store", "data"),
-    Input("crud-action-local", "data"),
+    Input("crud-action-local", "data", allow_optional=True),
     State("auth-store", "data"),
     State("ui-store", "data"),
     State({"type": "filter-field", "name": ALL}, "id"),
@@ -174,7 +174,7 @@ def load_rows(
     State({"type": "form-field-insert", "name": ALL}, "value"),
     State("schema-store", "data"),
     State("table-store", "data"),
-    State("active-menu-id-hint", "data"),
+    State("active-menu-id-hint", "data", allow_optional=True),
     State("auth-store", "data"),
     State("ui-store", "data"),
     prevent_initial_call=True,
@@ -265,13 +265,15 @@ def clear_insert_form_values(opened: bool, field_ids: list[dict[str, Any]] | Non
     Output("edit-modal-error", "children"),
     Output({"type": "form-field-edit", "name": ALL}, "value"),
     Output("edit-row-store", "data"),
+    Output("crud-action-local", "data", allow_duplicate=True),
+    Output("crud-action-store", "data", allow_duplicate=True),
     Input("dynamic-grid", "cellDoubleClicked"),
     Input("edit-cancel", "n_clicks"),
     Input("edit-confirm", "n_clicks"),
     State("dynamic-grid", "selectedRows"),
     State({"type": "form-field-edit", "name": ALL}, "id"),
     State({"type": "form-field-edit", "name": ALL}, "value"),
-    State("active-menu-id-hint", "data"),
+    State("active-menu-id-hint", "data", allow_optional=True),
     State("auth-store", "data"),
     State("ui-store", "data"),
     State("schema-store", "data"),
@@ -294,34 +296,34 @@ def handle_edit_modal(
     trigger = callback_context.triggered_id
     if trigger == "dynamic-grid":
         if not cell_double_clicked:
-            return no_update, no_update, [no_update for _ in (edit_field_ids or [])], no_update
+            return no_update, no_update, [no_update for _ in (edit_field_ids or [])], no_update, no_update, no_update
         row = (cell_double_clicked or {}).get("data") or (selected_rows[0] if selected_rows else None)
         if not row:
-            return no_update, no_update, [no_update for _ in (edit_field_ids or [])], no_update
+            return no_update, no_update, [no_update for _ in (edit_field_ids or [])], no_update, no_update, no_update
         row_id = row.get("id")
         if row_id is None:
-            return no_update, "Selected row has no id", [no_update for _ in (edit_field_ids or [])], no_update
+            return no_update, "Selected row has no id", [no_update for _ in (edit_field_ids or [])], no_update, no_update, no_update
         values = _map_row_to_form_values(row, edit_field_ids, schema)
-        return True, "", values, {"id": row_id}
+        return True, "", values, {"id": row_id}, no_update, no_update
 
     if trigger == "edit-cancel":
         values = [no_update for _ in (edit_field_ids or [])]
-        return False, "", values, {}
+        return False, "", values, {}, no_update, no_update
 
     if trigger != "edit-confirm":
-        return no_update, no_update, [no_update for _ in (edit_field_ids or [])], no_update
+        return no_update, no_update, [no_update for _ in (edit_field_ids or [])], no_update, no_update, no_update
 
     if not active_menu_id or not auth_data or not auth_data.get("authenticated"):
-        return True, "Unauthorized", [no_update for _ in (edit_field_ids or [])], no_update
+        return True, "Unauthorized", [no_update for _ in (edit_field_ids or [])], no_update, no_update, no_update
 
     row_id = (selected_rows or [{}])[0].get("id")
     if row_id is None:
-        return True, "Select a row before saving", [no_update for _ in (edit_field_ids or [])], no_update
+        return True, "Select a row before saving", [no_update for _ in (edit_field_ids or [])], no_update, no_update, no_update
 
     menu = _resolve_menu(ui_store, int(active_menu_id))
     form_name = ((menu or {}).get("form") or {}).get("name")
     if not form_name:
-        return True, "Selected menu is not bound to a form", [no_update for _ in (edit_field_ids or [])], no_update
+        return True, "Selected menu is not bound to a form", [no_update for _ in (edit_field_ids or [])], no_update, no_update, no_update
 
     payload = _build_typed_payload(edit_field_ids, edit_field_values, schema)
     payload["id"] = int(row_id)
@@ -333,25 +335,10 @@ def handle_edit_modal(
             payload={"form": form_name, "data": payload},
         )
         values = _clear_form_values(edit_field_ids)
-        return False, "", values, {}
+        event = {"ts": int(confirm_clicks or 0), "action": "edit", "menu_id": int(active_menu_id)}
+        return False, "", values, {}, event, event
     except ApiError as exc:
-        return True, exc.message, [no_update for _ in (edit_field_ids or [])], no_update
-
-
-@callback(
-    Output("crud-action-local", "data", allow_duplicate=True),
-    Output("crud-action-store", "data", allow_duplicate=True),
-    Output("dynamic-page-error", "children", allow_duplicate=True),
-    Input("edit-confirm", "n_clicks"),
-    State("edit-modal", "opened"),
-    State("active-menu-id-hint", "data"),
-    prevent_initial_call=True,
-)
-def mark_edit_refresh(confirm_clicks: int | None, modal_opened: bool, active_menu_id: int | None):
-    if not confirm_clicks or modal_opened or not active_menu_id:
-        return no_update, no_update, no_update
-    event = {"ts": int(confirm_clicks), "action": "edit", "menu_id": int(active_menu_id)}
-    return event, event, ""
+        return True, exc.message, [no_update for _ in (edit_field_ids or [])], no_update, no_update, no_update
 
 
 @callback(
@@ -360,7 +347,7 @@ def mark_edit_refresh(confirm_clicks: int | None, modal_opened: bool, active_men
     Output("dynamic-page-error", "children", allow_duplicate=True),
     Input({"type": "toolbar-action", "action": "delete", "index": ALL}, "n_clicks"),
     State("dynamic-grid", "selectedRows"),
-    State("active-menu-id-hint", "data"),
+    State("active-menu-id-hint", "data", allow_optional=True),
     State("auth-store", "data"),
     State("ui-store", "data"),
     prevent_initial_call=True,

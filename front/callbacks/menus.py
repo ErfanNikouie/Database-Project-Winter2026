@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dash import ALL, Input, Output, State, callback, no_update
+from dash import ALL, Input, Output, State, callback, callback_context, no_update
 
 from layouts.sidebar import build_sidebar
 from services.metadata_service import fetch_metadata_version
@@ -29,6 +29,14 @@ def load_menus(auth_data: dict, pathname: str, crud_event: dict | None, ui_store
         ui["selected_menu_id"] = None
 
     expanded_folder_ids = [int(item) for item in (ui.get("expanded_menu_folders") or []) if str(item).isdigit()]
+
+    trigger = callback_context.triggered_id
+    cached_items = ui.get("menu_tree") or []
+    if trigger == "_pages_location" and cached_items:
+        if selected_menu_id is not None:
+            expanded_folder_ids = sorted(set(expanded_folder_ids) | _ancestor_folder_ids(cached_items, selected_menu_id))
+        ui["expanded_menu_folders"] = expanded_folder_ids
+        return ui, build_sidebar(cached_items, ui.get("selected_menu_id"), ui.get("expanded_menu_folders"))
 
     etag = ui.get("menu_tree_etag")
     if isinstance(crud_event, dict) and crud_event.get("action") in {"insert", "edit", "delete"}:

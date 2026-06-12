@@ -12,6 +12,7 @@ from apps.common.exceptions import NotFoundException, ValidationException
 from apps.common.permissions.permission_service import PermissionService
 from apps.forms.models import Form, FormField
 from apps.forms.services.filter_parser import FilterParser
+from apps.forms.services.schema_service import SchemaService
 from apps.forms.services.validation_service import ValidationService
 from apps.lookups.models import Lookup, LookupValue
 from apps.menus.models import Menu, Permission
@@ -314,7 +315,17 @@ class CrudService:
         if not inspector.has_table(form.table_name):
             raise NotFoundException("Physical table does not exist")
         metadata = MetaData()
-        return Table(form.table_name, metadata, autoload_with=engine)
+        table = Table(form.table_name, metadata, autoload_with=engine)
+
+        missing_fields = [field for field in form.fields.all() if field.name not in table.c.keys()]
+        if not missing_fields:
+            return table
+
+        for field in missing_fields:
+            SchemaService.add_field(form, field)
+
+        refreshed_metadata = MetaData()
+        return Table(form.table_name, refreshed_metadata, autoload_with=engine)
 
     @staticmethod
     def _resolve_label_field_name(form: Form, table: Table) -> str:
