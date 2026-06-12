@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dash import Input, Output, State, callback, no_update
+from dash import Input, Output, State, callback
 
 from layouts.sidebar import build_sidebar
 from services.metadata_service import fetch_metadata_version
@@ -13,10 +13,11 @@ from utils.models import ApiError
     Output("sidebar-wrapper", "children"),
     Input("auth-store", "data"),
     Input("_pages_location", "pathname"),
+    Input("crud-action-store", "data"),
     State("ui-store", "data"),
     prevent_initial_call=False,
 )
-def load_menus(auth_data: dict, pathname: str, ui_store: dict):
+def load_menus(auth_data: dict, pathname: str, crud_event: dict | None, ui_store: dict):
     if not auth_data or not auth_data.get("authenticated"):
         return ui_store, []
 
@@ -26,6 +27,8 @@ def load_menus(auth_data: dict, pathname: str, ui_store: dict):
         ui["selected_menu_id"] = selected_menu_id
 
     etag = ui.get("menu_tree_etag")
+    if isinstance(crud_event, dict) and crud_event.get("action") in {"insert", "edit", "delete"}:
+        etag = None
     try:
         ui["metadata_version"] = fetch_metadata_version(
             base_url=_base_url(),

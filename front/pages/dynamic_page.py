@@ -13,6 +13,8 @@ def layout(menu_id: str | None = None) -> html.Div:
     return html.Div(
         [
             dcc.Store(id="active-menu-id-hint", data=menu_id),
+            dcc.Store(id="edit-row-store", data={}),
+            dcc.Store(id="crud-action-local", data={"ts": 0, "action": ""}),
             dcc.Download(id="download-csv"),
             dmc.Group(
                 [
@@ -31,18 +33,46 @@ def layout(menu_id: str | None = None) -> html.Div:
                 opened=False,
                 title="Insert Record",
                 centered=True,
+                size="xl",
+                radius="lg",
+                className="insert-modal",
                 children=dmc.Stack(
                     [
-                        dmc.Text("Fields marked with * are required. Locked fields are system-generated.", c="dimmed", size="sm"),
-                        dmc.Paper(id="insert-form-container", p="sm", withBorder=True),
+                        dmc.Text("Fields marked with * are required. Locked fields are system-generated.", c="dimmed", size="sm", className="insert-modal-hint"),
+                        dmc.Paper(id="insert-form-container", p="md", withBorder=True, radius="md", className="insert-form-card"),
                         dmc.Group(
                             [
                                 dmc.Button("Cancel", id="insert-cancel", variant="default"),
                                 dmc.Button("Insert", id="insert-confirm"),
                             ],
                             justify="flex-end",
+                            className="insert-modal-actions",
                         ),
                         html.Div(id="insert-modal-error", className="page-error"),
+                    ]
+                ),
+            ),
+            dmc.Modal(
+                id="edit-modal",
+                opened=False,
+                title="Edit Record",
+                centered=True,
+                size="xl",
+                radius="lg",
+                className="insert-modal",
+                children=dmc.Stack(
+                    [
+                        dmc.Text("Edit fields and save changes.", c="dimmed", size="sm", className="insert-modal-hint"),
+                        dmc.Paper(id="edit-form-container", p="md", withBorder=True, radius="md", className="insert-form-card"),
+                        dmc.Group(
+                            [
+                                dmc.Button("Cancel", id="edit-cancel", variant="default"),
+                                dmc.Button("Save", id="edit-confirm"),
+                            ],
+                            justify="flex-end",
+                            className="insert-modal-actions",
+                        ),
+                        html.Div(id="edit-modal-error", className="page-error"),
                     ]
                 ),
             ),

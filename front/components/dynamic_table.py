@@ -4,7 +4,8 @@ from typing import Any
 
 import dash_ag_grid as dag
 import dash_mantine_components as dmc
-from dash import html
+
+from utils.labels import humanize_field_name
 
 
 def build_toolbar(*, can_insert: bool, can_delete: bool, can_print: bool, count: int, menu_index: int) -> dmc.Group:
@@ -42,7 +43,16 @@ def build_toolbar(*, can_insert: bool, can_delete: bool, can_print: bool, count:
 
 
 def build_grid(*, rows: list[dict[str, Any]], columns: list[str]) -> dag.AgGrid:
-    column_defs = [{"field": col, "resizable": True, "sortable": True, "filter": True} for col in columns]
+    column_defs = [
+        {
+            "field": col,
+            "headerName": humanize_field_name(col),
+            "resizable": True,
+            "sortable": True,
+            "filter": True,
+        }
+        for col in columns
+    ]
     return dag.AgGrid(
         id="dynamic-grid",
         rowData=rows,
@@ -59,7 +69,7 @@ def build_grid(*, rows: list[dict[str, Any]], columns: list[str]) -> dag.AgGrid:
     )
 
 
-def build_empty_grid() -> html.Div:
+def build_empty_grid() -> Any:
     return dag.AgGrid(
         id="dynamic-grid",
         rowData=[],

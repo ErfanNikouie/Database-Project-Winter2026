@@ -34,8 +34,8 @@ SYSTEM_FORM_DEFINITIONS = [
         "name": "UserUserGroup",
         "table_name": "user_user_group",
         "fields": [
-            ("user_id", FormFieldType.INTEGER, True),
-            ("usergroup_id", FormFieldType.INTEGER, True),
+            ("user_id", FormFieldType.FOREIGN_KEY, True),
+            ("usergroup_id", FormFieldType.FOREIGN_KEY, True),
         ],
     },
     {
@@ -110,6 +110,8 @@ SYSTEM_FORM_DEFINITIONS = [
 ]
 
 SYSTEM_FIELD_OPTIONS = {
+    ("user_user_group", "user_id"): {"foreign_key_table": "user", "foreign_key_field": "id"},
+    ("user_user_group", "usergroup_id"): {"foreign_key_table": "user_group", "foreign_key_field": "id"},
     ("menu", "parent_menu_id"): {"foreign_key_table": "menu", "foreign_key_field": "id"},
     ("menu", "form_id"): {"foreign_key_table": "form", "foreign_key_field": "id"},
     ("form_field", "form_id"): {"foreign_key_table": "form", "foreign_key_field": "id"},

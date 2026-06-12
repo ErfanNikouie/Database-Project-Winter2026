@@ -6,19 +6,28 @@ import dash_mantine_components as dmc
 from dash import html
 
 from utils.filter_help import FILTER_HELP_BY_TYPE
+from utils.labels import humanize_field_name
 
 
-def build_filter_section(*, fields: list[dict[str, Any]]) -> dmc.Accordion:
+def build_filter_section(
+    *,
+    fields: list[dict[str, Any]],
+    fk_options_by_field: dict[str, list[dict[str, str]]] | None = None,
+    lookup_options_by_field: dict[str, list[dict[str, str]]] | None = None,
+) -> dmc.Accordion:
     controls = []
+    fk_options = fk_options_by_field or {}
+    lookup_options = lookup_options_by_field or {}
     for field in fields:
         name = field["name"]
         field_type = field["type"]
         field_id = {"type": "filter-field", "name": name}
+        display_name = humanize_field_name(name)
 
         if field_type == "Boolean":
             control = dmc.Select(
                 id=field_id,
-                label=f"{name} ({field_type})",
+                label=f"{display_name} ({field_type})",
                 data=[
                     {"label": "Don't Care", "value": ""},
                     {"label": "True", "value": "True"},
@@ -26,10 +35,64 @@ def build_filter_section(*, fields: list[dict[str, Any]]) -> dmc.Accordion:
                 ],
                 value="",
             )
+        elif field_type == "ForeignKey":
+            control = dmc.Select(
+                id=field_id,
+                label=f"{display_name} ({field_type})",
+                data=fk_options.get(name, []),
+                value=None,
+                searchable=True,
+                clearable=True,
+            )
+        elif field_type == "Lookup":
+            control = dmc.Select(
+                id=field_id,
+                label=f"{display_name} ({field_type})",
+                data=lookup_options.get(name, []),
+                value=None,
+                searchable=True,
+                clearable=True,
+            )
+        elif field_type == "Date":
+            control = dmc.Stack(
+                [
+                    dmc.DateInput(
+                        id={"type": "filter-date-bound", "name": name, "bound": "from"},
+                        label=f"{display_name} From",
+                        value=None,
+                        clearable=True,
+                    ),
+                    dmc.DateInput(
+                        id={"type": "filter-date-bound", "name": name, "bound": "to"},
+                        label=f"{display_name} To",
+                        value=None,
+                        clearable=True,
+                    ),
+                ],
+                gap="xs",
+            )
+        elif field_type == "DateTime":
+            control = dmc.Stack(
+                [
+                    dmc.DateTimePicker(
+                        id={"type": "filter-date-bound", "name": name, "bound": "from"},
+                        label=f"{display_name} From",
+                        value=None,
+                        clearable=True,
+                    ),
+                    dmc.DateTimePicker(
+                        id={"type": "filter-date-bound", "name": name, "bound": "to"},
+                        label=f"{display_name} To",
+                        value=None,
+                        clearable=True,
+                    ),
+                ],
+                gap="xs",
+            )
         else:
             control = dmc.TextInput(
                 id=field_id,
-                label=f"{name} ({field_type})",
+                label=f"{display_name} ({field_type})",
                 placeholder=FILTER_HELP_BY_TYPE.get(field_type, ""),
             )
         controls.append(control)

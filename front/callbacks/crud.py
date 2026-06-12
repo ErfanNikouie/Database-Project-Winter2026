@@ -10,6 +10,7 @@ from components.dynamic_form import build_dynamic_form
 from components.dynamic_table import build_empty_grid, build_grid, build_toolbar
 from components.filters import build_filter_section
 from services.api_client import api_client
+from services.display_service import enrich_rows_for_display
 from services.metadata_service import fetch_form_schema
 from utils.models import ApiError
 
@@ -20,18 +21,19 @@ from utils.models import ApiError
     Output("dynamic-page-table", "children"),
     Output("dynamic-filter-section", "children"),
     Output("insert-form-container", "children"),
-    Input("active-menu-id", "data"),
+    Output("edit-form-container", "children"),
+    Input("active-menu-id-hint", "data"),
     State("ui-store", "data"),
     State("auth-store", "data"),
     prevent_initial_call=True,
 )
 def load_schema(active_menu_id: str | None, ui_store: dict, auth_data: dict):
     if not active_menu_id or not auth_data or not auth_data.get("authenticated"):
-        return {}, "", "", "", no_update
+        return {}, "", "", "", no_update, no_update
 
     menu = _resolve_menu(ui_store, int(active_menu_id))
     if not menu or not menu.get("form"):
-        return {}, "", "", "", no_update
+        return {}, "", "", "", no_update, no_update
 
     form = menu["form"]
     schema = fetch_form_schema(
@@ -40,13 +42,33 @@ def load_schema(active_menu_id: str | None, ui_store: dict, auth_data: dict):
         metadata_version=(ui_store or {}).get("metadata_version", ""),
         table_name=form["table_name"],
     )
-    fields = schema.get("fields", [])
+    schema_payload = {**schema, "_table_name": form["table_name"]}
+    fields = schema_payload.get("fields", [])
+    fk_options_by_field = _build_fk_options(fields, auth_data["access_token"])
+    lookup_options_by_field = _build_lookup_options(fields, auth_data["access_token"])
     return (
-        schema,
+        schema_payload,
         menu["name"],
         form["table_name"],
-        build_filter_section(fields=fields),
-        build_dynamic_form(form_key="insert", fields=fields),
+        build_filter_section(
+            fields=fields,
+            fk_options_by_field=fk_options_by_field,
+            lookup_options_by_field=lookup_options_by_field,
+        ),
+        build_dynamic_form(
+            form_key="insert",
+            fields=fields,
+            fk_options_by_field=fk_options_by_field,
+            lookup_options_by_field=lookup_options_by_field,
+            mode="insert",
+        ),
+        build_dynamic_form(
+            form_key="edit",
+            fields=fields,
+            fk_options_by_field=fk_options_by_field,
+            lookup_options_by_field=lookup_options_by_field,
+            mode="edit",
+        ),
     )
 
 
@@ -56,22 +78,28 @@ def load_schema(active_menu_id: str | None, ui_store: dict, auth_data: dict):
     Output("dynamic-grid-wrapper", "children"),
     Output("dynamic-page-error", "children"),
     Input({"type": "toolbar-action", "action": "refresh", "index": ALL}, "n_clicks"),
-    Input("active-menu-id", "data"),
+    Input("active-menu-id-hint", "data"),
+    Input("schema-store", "data"),
+    Input("crud-action-local", "data"),
     State("auth-store", "data"),
     State("ui-store", "data"),
-    State("schema-store", "data"),
     State({"type": "filter-field", "name": ALL}, "id"),
     State({"type": "filter-field", "name": ALL}, "value"),
+    State({"type": "filter-date-bound", "name": ALL, "bound": ALL}, "id"),
+    State({"type": "filter-date-bound", "name": ALL, "bound": ALL}, "value"),
     prevent_initial_call=True,
 )
 def load_rows(
     _refresh_clicks: list[int] | None,
     active_menu_id: str | None,
+    schema: dict,
+    _crud_action: dict | None,
     auth_data: dict,
     ui_store: dict,
-    schema: dict,
     filter_ids: list[dict[str, Any]] | None,
     filter_values: list[Any] | None,
+    filter_date_ids: list[dict[str, Any]] | None,
+    filter_date_values: list[Any] | None,
 ):
     if not active_menu_id or not auth_data or not auth_data.get("authenticated"):
         return {"rows": [], "count": 0}, "", build_empty_grid(), ""
@@ -83,6 +111,18 @@ def load_rows(
     form = menu.get("form") or {}
     if not form.get("name"):
         return {"rows": [], "count": 0}, "", build_empty_grid(), "Selected menu is not bound to a form"
+
+    schema_table_name = (schema or {}).get("_table_name")
+    if schema_table_name != form.get("table_name"):
+        toolbar = build_toolbar(
+            can_insert=bool((menu.get("permissions") or {}).get("can_insert")),
+            can_delete=bool((menu.get("permissions") or {}).get("can_delete")),
+            can_print=bool((menu.get("permissions") or {}).get("can_print")),
+            count=0,
+            menu_index=int(active_menu_id),
+        )
+        return {"rows": [], "count": 0}, toolbar, build_empty_grid(), ""
+
     target = {"form": form["name"]}
     permissions = menu.get("permissions", {})
 
@@ -92,7 +132,7 @@ def load_rows(
         "offset": 0,
         "sort_by": "id",
         "sort_direction": "asc",
-        "filters": _build_filters(filter_ids, filter_values),
+        "filters": _build_filters(filter_ids, filter_values, filter_date_ids, filter_date_values),
     }
 
     try:
@@ -105,7 +145,12 @@ def load_rows(
         return {"rows": [], "count": 0}, "", build_empty_grid(), exc.message
 
     rows = listing.get("items", [])
-    columns = list(rows[0].keys()) if rows else [field["name"] for field in schema.get("fields", []) if field["name"] != "password_hash"]
+    display_rows, columns = enrich_rows_for_display(
+        base_url=_base_url(),
+        access_token=auth_data["access_token"],
+        schema=schema,
+        rows=rows,
+    )
     toolbar = build_toolbar(
         can_insert=bool(permissions.get("can_insert")),
         can_delete=bool(permissions.get("can_delete")),
@@ -113,13 +158,15 @@ def load_rows(
         count=int(listing.get("count", 0)),
         menu_index=int(active_menu_id),
     )
-    grid = build_grid(rows=rows, columns=columns) if rows else build_empty_grid()
-    return {"rows": rows, "count": int(listing.get("count", 0))}, toolbar, grid, ""
+    grid = build_grid(rows=display_rows, columns=columns) if rows else build_empty_grid()
+    return {"rows": display_rows, "count": int(listing.get("count", 0))}, toolbar, grid, ""
 
 
 @callback(
     Output("insert-modal", "opened"),
     Output("insert-modal-error", "children"),
+    Output("crud-action-local", "data", allow_duplicate=True),
+    Output("crud-action-store", "data", allow_duplicate=True),
     Input({"type": "toolbar-action", "action": "insert", "index": ALL}, "n_clicks"),
     Input("insert-cancel", "n_clicks"),
     Input("insert-confirm", "n_clicks"),
@@ -127,7 +174,7 @@ def load_rows(
     State({"type": "form-field-insert", "name": ALL}, "value"),
     State("schema-store", "data"),
     State("table-store", "data"),
-    State("active-menu-id", "data"),
+    State("active-menu-id-hint", "data"),
     State("auth-store", "data"),
     State("ui-store", "data"),
     prevent_initial_call=True,
@@ -148,36 +195,36 @@ def handle_insert_modal(
 
     trigger = callback_context.triggered_id
     if trigger is None:
-        return no_update, no_update
+        return no_update, no_update, no_update, no_update
 
     if isinstance(trigger, dict) and trigger.get("action") == "insert":
         if _max_clicks(insert_clicks) <= 0:
-            return no_update, no_update
-        return True, ""
+            return no_update, no_update, no_update, no_update
+        return True, "", no_update, no_update
 
     if trigger == "insert-cancel":
-        return False, ""
+        return False, "", no_update, no_update
 
     if trigger != "insert-confirm":
-        return no_update, no_update
+        return no_update, no_update, no_update, no_update
 
     if (confirm_clicks or 0) <= 0:
-        return no_update, no_update
+        return no_update, no_update, no_update, no_update
 
     if not active_menu_id or not auth_data or not auth_data.get("authenticated"):
-        return True, "Unauthorized"
+        return True, "Unauthorized", no_update, no_update
 
     menu = _resolve_menu(ui_store, int(active_menu_id))
     form = (menu or {}).get("form") or {}
     form_name = form.get("name")
     if not form_name:
-        return True, "Selected menu is not bound to a form"
+        return True, "Selected menu is not bound to a form", no_update, no_update
 
-    payload_data = _build_insert_payload(insert_field_ids, insert_field_values)
+    payload_data = _build_typed_payload(insert_field_ids, insert_field_values, schema)
 
     validation_error = _validate_insert_payload(schema, payload_data, table_store)
     if validation_error:
-        return True, validation_error
+        return True, validation_error, no_update, no_update
 
     try:
         api_client.insert_row(
@@ -185,9 +232,10 @@ def handle_insert_modal(
             access_token=auth_data["access_token"],
             payload={"form": form_name, "data": payload_data},
         )
-        return False, ""
+        event = {"ts": int(confirm_clicks or 0), "action": "insert", "menu_id": int(active_menu_id)}
+        return False, "", event, event
     except ApiError as exc:
-        return True, exc.message
+        return True, exc.message, no_update, no_update
 
 
 @callback(
@@ -197,10 +245,10 @@ def handle_insert_modal(
     prevent_initial_call=True,
 )
 def clear_insert_form_values(opened: bool, field_ids: list[dict[str, Any]] | None):
-    if opened:
-        return no_update
     if not field_ids:
-        return no_update
+        return []
+    if opened:
+        return [no_update for _ in field_ids]
 
     cleared = []
     for field_id in field_ids:
@@ -213,25 +261,106 @@ def clear_insert_form_values(opened: bool, field_ids: list[dict[str, Any]] | Non
 
 
 @callback(
-    Output("active-menu-id", "data", allow_duplicate=True),
-    Output("dynamic-page-error", "children", allow_duplicate=True),
-    Input("insert-confirm", "n_clicks"),
-    State("insert-modal", "opened"),
-    State("active-menu-id", "data"),
+    Output("edit-modal", "opened"),
+    Output("edit-modal-error", "children"),
+    Output({"type": "form-field-edit", "name": ALL}, "value"),
+    Output("edit-row-store", "data"),
+    Input("dynamic-grid", "cellDoubleClicked"),
+    Input("edit-cancel", "n_clicks"),
+    Input("edit-confirm", "n_clicks"),
+    State("dynamic-grid", "selectedRows"),
+    State({"type": "form-field-edit", "name": ALL}, "id"),
+    State({"type": "form-field-edit", "name": ALL}, "value"),
+    State("active-menu-id-hint", "data"),
+    State("auth-store", "data"),
+    State("ui-store", "data"),
+    State("schema-store", "data"),
     prevent_initial_call=True,
 )
-def mark_insert_refresh(confirm_clicks: int | None, modal_opened: bool, active_menu_id: int | None):
-    if not confirm_clicks or modal_opened or not active_menu_id:
-        return no_update, no_update
-    return active_menu_id, ""
+def handle_edit_modal(
+    cell_double_clicked: dict | None,
+    cancel_clicks: int | None,
+    confirm_clicks: int | None,
+    selected_rows: list[dict[str, Any]] | None,
+    edit_field_ids: list[dict[str, Any]] | None,
+    edit_field_values: list[Any] | None,
+    active_menu_id: str | None,
+    auth_data: dict,
+    ui_store: dict,
+    schema: dict,
+):
+    from dash import callback_context
+
+    trigger = callback_context.triggered_id
+    if trigger == "dynamic-grid":
+        if not cell_double_clicked:
+            return no_update, no_update, [no_update for _ in (edit_field_ids or [])], no_update
+        row = (cell_double_clicked or {}).get("data") or (selected_rows[0] if selected_rows else None)
+        if not row:
+            return no_update, no_update, [no_update for _ in (edit_field_ids or [])], no_update
+        row_id = row.get("id")
+        if row_id is None:
+            return no_update, "Selected row has no id", [no_update for _ in (edit_field_ids or [])], no_update
+        values = _map_row_to_form_values(row, edit_field_ids, schema)
+        return True, "", values, {"id": row_id}
+
+    if trigger == "edit-cancel":
+        values = [no_update for _ in (edit_field_ids or [])]
+        return False, "", values, {}
+
+    if trigger != "edit-confirm":
+        return no_update, no_update, [no_update for _ in (edit_field_ids or [])], no_update
+
+    if not active_menu_id or not auth_data or not auth_data.get("authenticated"):
+        return True, "Unauthorized", [no_update for _ in (edit_field_ids or [])], no_update
+
+    row_id = (selected_rows or [{}])[0].get("id")
+    if row_id is None:
+        return True, "Select a row before saving", [no_update for _ in (edit_field_ids or [])], no_update
+
+    menu = _resolve_menu(ui_store, int(active_menu_id))
+    form_name = ((menu or {}).get("form") or {}).get("name")
+    if not form_name:
+        return True, "Selected menu is not bound to a form", [no_update for _ in (edit_field_ids or [])], no_update
+
+    payload = _build_typed_payload(edit_field_ids, edit_field_values, schema)
+    payload["id"] = int(row_id)
+
+    try:
+        api_client.update_row(
+            base_url=_base_url(),
+            access_token=auth_data["access_token"],
+            payload={"form": form_name, "data": payload},
+        )
+        values = _clear_form_values(edit_field_ids)
+        return False, "", values, {}
+    except ApiError as exc:
+        return True, exc.message, [no_update for _ in (edit_field_ids or [])], no_update
 
 
 @callback(
-    Output("active-menu-id", "data", allow_duplicate=True),
+    Output("crud-action-local", "data", allow_duplicate=True),
+    Output("crud-action-store", "data", allow_duplicate=True),
+    Output("dynamic-page-error", "children", allow_duplicate=True),
+    Input("edit-confirm", "n_clicks"),
+    State("edit-modal", "opened"),
+    State("active-menu-id-hint", "data"),
+    prevent_initial_call=True,
+)
+def mark_edit_refresh(confirm_clicks: int | None, modal_opened: bool, active_menu_id: int | None):
+    if not confirm_clicks or modal_opened or not active_menu_id:
+        return no_update, no_update, no_update
+    event = {"ts": int(confirm_clicks), "action": "edit", "menu_id": int(active_menu_id)}
+    return event, event, ""
+
+
+@callback(
+    Output("crud-action-local", "data", allow_duplicate=True),
+    Output("crud-action-store", "data", allow_duplicate=True),
     Output("dynamic-page-error", "children", allow_duplicate=True),
     Input({"type": "toolbar-action", "action": "delete", "index": ALL}, "n_clicks"),
     State("dynamic-grid", "selectedRows"),
-    State("active-menu-id", "data"),
+    State("active-menu-id-hint", "data"),
     State("auth-store", "data"),
     State("ui-store", "data"),
     prevent_initial_call=True,
@@ -244,21 +373,21 @@ def handle_delete(
     ui_store: dict,
 ):
     if _max_clicks(delete_clicks) <= 0:
-        return no_update, no_update
+        return no_update, no_update, no_update
     if not selected_rows:
-        return no_update, "Select a row to delete"
+        return no_update, no_update, "Select a row to delete"
     if not active_menu_id or not auth_data or not auth_data.get("authenticated"):
-        return no_update, "Unauthorized"
+        return no_update, no_update, "Unauthorized"
 
     row_id = selected_rows[0].get("id")
     if row_id is None:
-        return no_update, "Selected row is missing id"
+        return no_update, no_update, "Selected row is missing id"
 
     menu = _resolve_menu(ui_store, int(active_menu_id))
     form = (menu or {}).get("form") or {}
     form_name = form.get("name")
     if not form_name:
-        return no_update, "Selected menu is not bound to a form"
+        return no_update, no_update, "Selected menu is not bound to a form"
 
     try:
         api_client.delete_row(
@@ -267,9 +396,11 @@ def handle_delete(
             payload={"form": form_name, "data": {"id": int(row_id)}},
         )
     except ApiError as exc:
-        return no_update, exc.message
+        return no_update, no_update, exc.message
 
-    return int(active_menu_id), ""
+    ts = _max_clicks(delete_clicks)
+    event = {"ts": int(ts), "action": "delete", "menu_id": int(active_menu_id)}
+    return event, event, ""
 
 
 @callback(
@@ -310,20 +441,49 @@ def _base_url() -> str:
     return DEFAULT_BASE_URL
 
 
-def _build_filters(filter_ids: list[dict[str, Any]] | None, filter_values: list[Any] | None) -> dict[str, Any]:
-    if not filter_ids or not filter_values:
-        return {}
+def _build_filters(
+    filter_ids: list[dict[str, Any]] | None,
+    filter_values: list[Any] | None,
+    filter_date_ids: list[dict[str, Any]] | None,
+    filter_date_values: list[Any] | None,
+) -> dict[str, Any]:
     filters: dict[str, Any] = {}
-    for field_id, value in zip(filter_ids, filter_values):
+    for field_id, value in zip(filter_ids or [], filter_values or []):
         if not isinstance(field_id, dict):
             continue
         name = field_id.get("name")
-        if not name:
-            continue
-        if value in (None, ""):
+        if not name or value in (None, ""):
             continue
         filters[str(name)] = value
+
+    date_bounds: dict[str, dict[str, Any]] = {}
+    for field_id, value in zip(filter_date_ids or [], filter_date_values or []):
+        if not isinstance(field_id, dict):
+            continue
+        name = field_id.get("name")
+        bound = field_id.get("bound")
+        if not name or bound not in {"from", "to"} or value in (None, ""):
+            continue
+        entry = date_bounds.setdefault(str(name), {})
+        entry[str(bound)] = value
+
+    for name, bounds in date_bounds.items():
+        range_tokens: list[str] = []
+        if "from" in bounds:
+            range_tokens.append(f">={_to_filter_literal(bounds['from'])}")
+        if "to" in bounds:
+            range_tokens.append(f"<={_to_filter_literal(bounds['to'])}")
+        if range_tokens:
+            filters[name] = "&".join(range_tokens)
+
     return filters
+
+
+def _to_filter_literal(value: Any) -> str:
+    text = str(value)
+    if " " in text and "T" not in text:
+        return text.replace(" ", "T")
+    return text
 
 
 def _max_clicks(clicks: list[int] | None) -> int:
@@ -333,8 +493,18 @@ def _max_clicks(clicks: list[int] | None) -> int:
 
 
 def _build_insert_payload(field_ids: list[dict[str, Any]] | None, field_values: list[Any] | None) -> dict[str, Any]:
+    return _build_typed_payload(field_ids, field_values, None)
+
+
+def _build_typed_payload(
+    field_ids: list[dict[str, Any]] | None,
+    field_values: list[Any] | None,
+    schema: dict | None,
+) -> dict[str, Any]:
     if not field_ids or not field_values:
         return {}
+
+    field_types = {field.get("name"): field.get("type") for field in (schema or {}).get("fields", [])}
     payload: dict[str, Any] = {}
     for field_id, value in zip(field_ids, field_values):
         if not isinstance(field_id, dict):
@@ -344,7 +514,16 @@ def _build_insert_payload(field_ids: list[dict[str, Any]] | None, field_values: 
             continue
         if value in (None, ""):
             continue
-        payload[str(name)] = value
+
+        field_type = field_types.get(name)
+        if field_type in {"Integer", "Lookup", "ForeignKey"}:
+            payload[str(name)] = int(value)
+        elif field_type in {"Double", "Decimal"}:
+            payload[str(name)] = float(value)
+        elif field_type == "Boolean":
+            payload[str(name)] = str(value).lower() == "true"
+        else:
+            payload[str(name)] = value
     return payload
 
 
@@ -376,5 +555,85 @@ def _validate_insert_payload(schema: dict | None, payload: dict[str, Any], table
             return f"Field '{name}' must be unique"
 
     return None
+
+
+def _build_fk_options(fields: list[dict[str, Any]], access_token: str) -> dict[str, list[dict[str, str]]]:
+    options: dict[str, list[dict[str, str]]] = {}
+    for field in fields:
+        if field.get("type") != "ForeignKey" or not field.get("foreign_key_table"):
+            continue
+        name = field.get("name")
+        if not name:
+            continue
+        rows = api_client.list_options(
+            base_url=_base_url(),
+            access_token=access_token,
+            payload={"table": field["foreign_key_table"], "limit": 200, "query": ""},
+        )
+        options[name] = [{"value": str(row["id"]), "label": str(row["label"])} for row in rows]
+    return options
+
+
+def _build_lookup_options(fields: list[dict[str, Any]], access_token: str) -> dict[str, list[dict[str, str]]]:
+    options: dict[str, list[dict[str, str]]] = {}
+    for field in fields:
+        if field.get("type") != "Lookup" or not field.get("lookup_id"):
+            continue
+        name = field.get("name")
+        if not name:
+            continue
+        rows = api_client.list_rows(
+            base_url=_base_url(),
+            access_token=access_token,
+            payload={
+                "form": "LookupValue",
+                "limit": 1000,
+                "offset": 0,
+                "sort_by": "value",
+                "sort_direction": "asc",
+                "filters": {"lookup_id": int(field["lookup_id"])},
+            },
+        ).get("items", [])
+        options[name] = [{"value": str(row["id"]), "label": str(row.get("value", row["id"]))} for row in rows]
+    return options
+
+
+def _map_row_to_form_values(
+    row: dict[str, Any],
+    field_ids: list[dict[str, Any]] | None,
+    schema: dict[str, Any] | None,
+) -> list[Any]:
+    if not field_ids:
+        return []
+    field_types = {field.get("name"): field.get("type") for field in (schema or {}).get("fields", [])}
+    values: list[Any] = []
+    for field_id in field_ids:
+        name = (field_id or {}).get("name")
+        if not name:
+            values.append(None)
+            continue
+        value = row.get(name)
+        field_type = field_types.get(name)
+        if field_type in {"ForeignKey", "Lookup"}:
+            values.append(None if value in (None, "") else str(value))
+            continue
+        if field_type == "Boolean":
+            values.append("" if value in (None, "") else str(value))
+            continue
+        values.append(value)
+    return values
+
+
+def _clear_form_values(field_ids: list[dict[str, Any]] | None) -> list[Any]:
+    if not field_ids:
+        return []
+    cleared = []
+    for field_id in field_ids:
+        name = (field_id or {}).get("name")
+        if name in {"id", "created_at", "updated_at", "password_hash"}:
+            cleared.append("Auto generated")
+        else:
+            cleared.append(None)
+    return cleared
 
 
