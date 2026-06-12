@@ -1,40 +1,32 @@
 from __future__ import annotations
 
-import streamlit as st
+import dash
+import dash_mantine_components as dmc
+from dash import html
 
-from api.auth import get_current_user, login
-from components.notifications import show_api_error
-from services.session import set_auth
-from utils.models import ApiError
+dash.register_page(__name__, path="/login", name="Login")
 
 
-def render_login_page(*, base_url: str) -> None:
-    left, center, right = st.columns([1, 1.4, 1])
-    with center:
-        st.markdown("<div class='card'>", unsafe_allow_html=True)
-        st.markdown("## Welcome back")
-        st.caption("Sign in to HRMS Dynamic Enterprise Platform")
-        username = st.text_input("Username")
-        password = st.text_input("Password", type="password")
-        remember_me = st.checkbox("Remember me", value=True)
-        submitted = st.button("Login", use_container_width=True)
-        st.markdown("</div>", unsafe_allow_html=True)
-
-    if not submitted:
-        return
-
-    try:
-        with st.spinner("Signing in..."):
-            data = login(base_url=base_url, username=username, password=password)
-            user_payload = data.get("user") or {}
-            if remember_me:
-                try:
-                    # Refresh profile payload on login to keep sidebar/profile in sync.
-                    user_payload = get_current_user(base_url=base_url, access_token=data["access"])
-                except ApiError:
-                    pass
-            set_auth(data["access"], data["refresh"], user_payload)
-        st.rerun()
-    except ApiError as exc:
-        show_api_error(exc.message, exc.field)
+def layout() -> html.Div:
+    return html.Div(
+        dmc.Center(
+            dmc.Paper(
+                [
+                    dmc.Title("Welcome back", order=2),
+                    dmc.Text("Sign in to HRMS Dynamic Enterprise Platform", c="dimmed", mb="md"),
+                    dmc.TextInput(id="login-username", label="Username"),
+                    dmc.PasswordInput(id="login-password", label="Password", mt="sm"),
+                    dmc.Checkbox(id="login-remember", label="Remember me", checked=True, mt="md"),
+                    dmc.Button("Login", id="login-submit", fullWidth=True, mt="lg"),
+                    html.Div(id="login-error", className="page-error"),
+                ],
+                radius="md",
+                p="xl",
+                withBorder=True,
+                className="login-card",
+            ),
+            h="80vh",
+        ),
+        className="login-page",
+    )
 

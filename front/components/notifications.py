@@ -1,19 +1,16 @@
 from __future__ import annotations
 
-import streamlit as st
+import dash_mantine_components as dmc
 
 
-def show_success(message: str) -> None:
-    st.toast(message, icon="✅")
+def build_success(message: str) -> dmc.Alert:
+    return dmc.Alert(title="Success", color="green", children=message)
 
 
-def show_error(message: str) -> None:
-    st.error(message)
+def build_error(message: str) -> dmc.Alert:
+    return dmc.Alert(title="Error", color="red", children=message)
 
 
-def show_api_error(error_message: str, field: str | None = None) -> None:
-    if field:
-        st.error(f"{error_message} (field: {field})")
-    else:
-        st.error(error_message)
+def build_warning(message: str) -> dmc.Alert:
+    return dmc.Alert(title="Warning", color="yellow", children=message)
 

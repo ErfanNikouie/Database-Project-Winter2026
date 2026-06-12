@@ -1,14 +1,13 @@
-# HRMS Streamlit Frontend
+# HRMS Dash Frontend
 
-Metadata-driven Streamlit UI for the HRMS backend in `../back`.
+Metadata-driven Dash + Dash Mantine Components frontend for the HRMS backend in `../back`.
 
 ## Features
 
-- JWT login, token refresh, logout.
-- Permission-aware dynamic menu tree (`/api/menus/tree`).
-- Generic dynamic CRUD pages using backend Form/FormField metadata.
-- Metadata-driven dynamic filters and form controls.
-- Server-side pagination and filtering.
+- JWT login, refresh, and logout.
+- Permission-aware menu tree (`/api/menus/tree`) with ETag-aware refresh.
+- Metadata-driven dynamic pages via Form/FormField schema.
+- Dynamic filters and Dash AG Grid table rendering.
 - Profile page (`/api/auth/me`) with password change support.
 
 ## Quick Start
@@ -16,7 +15,7 @@ Metadata-driven Streamlit UI for the HRMS backend in `../back`.
 ```bash
 cd front
 pip install -r requirements.txt
-streamlit run app.py
+python app.py
 ```
 
 ## Environment Variables
@@ -29,4 +28,14 @@ HRMS_REQUEST_TIMEOUT=30
 ```
 
 If no `.env` is present, defaults above are used.
+
+## Architecture
+
+- `app.py`: Dash app bootstrap and callback registration.
+- `pages/`: Login, profile, dynamic route-backed pages.
+- `layouts/`: Shell, navbar, and sidebar layout builders.
+- `callbacks/`: Authentication, navigation, menu, profile, and CRUD callback graph.
+- `components/`: Reusable dynamic form/table/filter/modal UI blocks.
+- `services/`: API clients, cache service, auth/metadata helpers.
+- `assets/`: Global styles and Mantine visual overrides.
 
