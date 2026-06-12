@@ -9,6 +9,8 @@ from apps.common.api.schema_views import HRMSRedocView, HRMSSchemaView, HRMSSwag
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api/auth/', include('apps.authentication.api.urls')),
+    path('api/system/', include('apps.common.api.urls')),
+    path('api/menus/', include('apps.menus.api.urls')),
     path('api/data/', include('apps.forms.api.urls')),
     path('api/forms/', include('apps.forms.api.form_urls')),
 ]

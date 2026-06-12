@@ -1,0 +1,9 @@
+PRIMARY = "#4f46e5"
+PRIMARY_HOVER = "#4338ca"
+BG = "#0f172a"
+CARD = "#111827"
+TEXT = "#e5e7eb"
+MUTED = "#94a3b8"
+SUCCESS = "#10b981"
+ERROR = "#ef4444"
+

@@ -78,3 +78,18 @@ class FormSchemaResponseSerializer(serializers.Serializer):
     fields = FormSchemaFieldSerializer(many=True)
 
 
+class DataOptionsSerializer(serializers.Serializer):
+    table = serializers.CharField(max_length=100, required=False)
+    form = serializers.CharField(max_length=100, required=False)
+    query = serializers.CharField(max_length=255, required=False, allow_blank=True)
+    ids = serializers.ListField(child=serializers.IntegerField(min_value=1), required=False)
+    limit = serializers.IntegerField(min_value=1, max_value=200, default=50)
+
+    def validate(self, attrs):
+        has_table = bool(attrs.get("table"))
+        has_form = bool(attrs.get("form"))
+        if has_table == has_form:
+            raise serializers.ValidationError("Exactly one of 'table' or 'form' must be provided.")
+        return attrs
+
+

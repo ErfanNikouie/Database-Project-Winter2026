@@ -5,7 +5,7 @@ from typing import Any
 
 from django.conf import settings
 from django.forms.models import model_to_dict
-from sqlalchemy import MetaData, Table, and_, delete, func, inspect, insert, select, update
+from sqlalchemy import MetaData, Table, and_, delete, func, inspect, insert, or_, select, update
 
 from apps.common.db.sqlalchemy import get_engine
 from apps.common.exceptions import NotFoundException, ValidationException
@@ -39,6 +39,57 @@ class ListResult:
 
 
 class CrudService:
+    @classmethod
+    def list_options(
+        cls,
+        *,
+        user,
+        table_name: str,
+        query: str = "",
+        ids: list[int] | None = None,
+        limit: int = 50,
+    ) -> list[dict[str, Any]]:
+        PermissionService.assert_table_permission(user, table_name, "list")
+        form = ValidationService.get_form_or_raise(table_name)
+        table = cls._get_dynamic_table(form)
+
+        label_field_name = cls._resolve_label_field_name(form, table)
+        label_column = table.c[label_field_name]
+
+        sql = select(table.c.id, label_column.label("label"))
+        if ids:
+            sql = sql.where(table.c.id.in_(ids))
+        elif query.strip():
+            query_value = query.strip()
+            string_like = {"String", "Text"}
+            if label_field_name == "id":
+                if query_value.isdigit():
+                    sql = sql.where(table.c.id == int(query_value))
+                else:
+                    return []
+            else:
+                label_type = next((f.type for f in form.fields.all() if f.name == label_field_name), None)
+                if label_type in string_like:
+                    sql = sql.where(label_column.ilike(f"%{query_value}%"))
+                elif query_value.isdigit():
+                    sql = sql.where(or_(table.c.id == int(query_value), label_column == int(query_value)))
+                else:
+                    sql = sql.where(table.c.id == -1)
+
+        sql = sql.order_by(table.c.id.asc()).limit(limit)
+
+        engine = get_engine()
+        with engine.begin() as connection:
+            rows = connection.execute(sql).mappings().all()
+
+        return [
+            {
+                "id": int(row["id"]),
+                "label": str(row["label"]) if row["label"] is not None else str(row["id"]),
+            }
+            for row in rows
+        ]
+
     @classmethod
     def insert(cls, *, user, table_name: str, data: dict) -> dict:
         PermissionService.assert_table_permission(user, table_name, "insert")
@@ -262,6 +313,20 @@ class CrudService:
             raise NotFoundException("Physical table does not exist")
         metadata = MetaData()
         return Table(form.table_name, metadata, autoload_with=engine)
+
+    @staticmethod
+    def _resolve_label_field_name(form: Form, table: Table) -> str:
+        preferred_types = {"String", "Text"}
+        sorted_fields = sorted(form.fields.all(), key=lambda field: (field.sort_order, field.id))
+        for field in sorted_fields:
+            if field.name in {"id", "created_at", "updated_at", "password_hash"}:
+                continue
+            if field.type in preferred_types and field.name in table.c:
+                return field.name
+        for field in sorted_fields:
+            if field.name in table.c and field.name not in {"id", "password_hash"}:
+                return field.name
+        return "id"
 
     @classmethod
     def _insert_dynamic(cls, form: Form, data: dict) -> dict:

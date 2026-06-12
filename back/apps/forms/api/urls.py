@@ -5,6 +5,7 @@ from apps.forms.api.views import (
     DataDetailAPIView,
     DataInsertAPIView,
     DataListAPIView,
+    DataOptionsAPIView,
     DataUpdateAPIView,
 )
 
@@ -14,5 +15,6 @@ urlpatterns = [
     path("delete", DataDeleteAPIView.as_view(), name="data-delete"),
     path("detail", DataDetailAPIView.as_view(), name="data-detail"),
     path("list", DataListAPIView.as_view(), name="data-list"),
+    path("options", DataOptionsAPIView.as_view(), name="data-options"),
 ]
 

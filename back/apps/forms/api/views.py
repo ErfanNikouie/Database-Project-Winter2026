@@ -8,6 +8,7 @@ from apps.forms.models import Form
 from apps.menus.models import Menu
 from apps.common.exceptions import ValidationException
 from apps.forms.serializers.data_serializers import (
+    DataOptionsSerializer,
     DeleteSerializer,
     DetailSerializer,
     ErrorEnvelopeSerializer,
@@ -241,6 +242,59 @@ class DataListAPIView(APIView):
             filters=serializer.validated_data.get("filters") or {},
         )
         return Response({"success": True, "data": {"count": result.count, "items": result.items}})
+
+
+class DataOptionsAPIView(APIView):
+    @extend_schema(
+        tags=["Dynamic Data"],
+        operation_id="data_options",
+        summary="Resolve lightweight id/label options for any form or table",
+        request=DataOptionsSerializer,
+        responses={
+            200: OpenApiResponse(response=GenericSuccessEnvelopeSerializer),
+            400: OpenApiResponse(response=ErrorEnvelopeSerializer),
+            401: OpenApiResponse(response=ErrorEnvelopeSerializer),
+            403: OpenApiResponse(response=ErrorEnvelopeSerializer),
+            404: OpenApiResponse(response=ErrorEnvelopeSerializer),
+        },
+        examples=[
+            OpenApiExample(
+                "Options by form search",
+                value={"form": "Department", "query": "Eng", "limit": 20},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Options by table ids",
+                value={"table": "department", "ids": [1, 3, 9], "limit": 20},
+                request_only=True,
+            ),
+            OpenApiExample(
+                "Options response",
+                value={"success": True, "data": {"items": [{"id": 1, "label": "Engineering"}]}},
+                response_only=True,
+            ),
+        ],
+    )
+    def post(self, request):
+        serializer = DataOptionsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        payload = serializer.validated_data
+
+        table_name = payload.get("table")
+        if not table_name:
+            form = Form.objects.filter(name=payload["form"]).order_by("id").first()
+            if not form:
+                raise ValidationException("Unknown form", field="form")
+            table_name = form.table_name
+
+        items = CrudService.list_options(
+            user=request.user,
+            table_name=table_name,
+            query=payload.get("query", ""),
+            ids=payload.get("ids") or [],
+            limit=payload.get("limit", 50),
+        )
+        return Response({"success": True, "data": {"items": items}})
 
 
 class FormSchemaAPIView(APIView):

@@ -199,6 +199,8 @@ SPECTACULAR_SETTINGS = {
         {'name': 'Authentication', 'description': 'JWT authentication APIs.'},
         {'name': 'Dynamic Data', 'description': 'Generic CRUD APIs over system and dynamic tables.'},
         {'name': 'Forms', 'description': 'Form metadata and runtime schema APIs.'},
+        {'name': 'Menus', 'description': 'Permission-aware menu tree APIs.'},
+        {'name': 'System', 'description': 'Platform metadata and system-level endpoints.'},
     ],
     'SWAGGER_UI_SETTINGS': {
         'persistAuthorization': True,
