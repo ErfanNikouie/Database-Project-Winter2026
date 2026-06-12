@@ -68,15 +68,43 @@ class SchemaService:
         column_name = cls.ensure_safe_identifier(field.name)
         column = cls._column_from_field(field)
         engine = get_engine()
-        nullable = "NOT NULL" if not column.nullable else ""
-        unique = "UNIQUE" if field.unique else ""
+        has_rows = cls._table_has_rows(table_name)
+        enforce_not_null = not column.nullable
+        add_as_nullable = enforce_not_null and has_rows and not field.default_value
         default_sql = f"DEFAULT {cls._format_default(field.default_value)}" if field.default_value else ""
+        nullable_sql = "" if add_as_nullable else ("NOT NULL" if enforce_not_null else "")
         sql = (
             f"ALTER TABLE {table_name} ADD COLUMN {column_name} "
-            f"{cls._sql_type(field.type)} {nullable} {unique} {default_sql}"
+            f"{cls._sql_type(field.type)} {nullable_sql} {default_sql}"
         ).strip()
         with engine.begin() as connection:
             connection.execute(text(sql))
+
+            if has_rows:
+                if field.default_value:
+                    connection.execute(
+                        text(
+                            f"UPDATE {table_name} SET {column_name} = {cls._format_default(field.default_value)} "
+                            f"WHERE {column_name} IS NULL"
+                        )
+                    )
+                elif enforce_not_null:
+                    backfill_expr = cls._backfill_sql_for_existing_rows(field.type, column_name)
+                    connection.execute(
+                        text(
+                            f"UPDATE {table_name} SET {column_name} = {backfill_expr} WHERE {column_name} IS NULL"
+                        )
+                    )
+
+            if enforce_not_null and add_as_nullable:
+                connection.execute(text(f"ALTER TABLE {table_name} ALTER COLUMN {column_name} SET NOT NULL"))
+
+            if field.unique:
+                constraint_name = f"uq_{table_name}_{column_name}"
+                connection.execute(
+                    text(f"ALTER TABLE {table_name} ADD CONSTRAINT {constraint_name} UNIQUE ({column_name})")
+                )
+
             if field.type == "ForeignKey" and field.foreign_key_table:
                 fk_table = cls.ensure_safe_identifier(field.foreign_key_table)
                 fk_field = cls.ensure_safe_identifier(field.foreign_key_field or "id")
@@ -87,6 +115,30 @@ class SchemaService:
                         f"ADD CONSTRAINT {constraint} FOREIGN KEY ({column_name}) REFERENCES {fk_table} ({fk_field})"
                     )
                 )
+
+    @classmethod
+    def _table_has_rows(cls, table_name: str) -> bool:
+        engine = get_engine()
+        with engine.begin() as connection:
+            row = connection.execute(text(f"SELECT 1 FROM {table_name} LIMIT 1")).first()
+        return row is not None
+
+    @staticmethod
+    def _backfill_sql_for_existing_rows(field_type: str, column_name: str) -> str:
+        if field_type in {"Integer", "Lookup", "ForeignKey"}:
+            return "id"
+        if field_type in {"Double", "Decimal"}:
+            return "id::numeric"
+        if field_type in {"String", "Text"}:
+            escaped = column_name.replace("'", "''")
+            return f"'{escaped}_' || id::text"
+        if field_type == "Date":
+            return "CURRENT_DATE + (id::integer)"
+        if field_type == "DateTime":
+            return "CURRENT_TIMESTAMP + (id * INTERVAL '1 second')"
+        if field_type == "Boolean":
+            return "FALSE"
+        return "NULL"
 
     @classmethod
     def update_field(cls, form: Form, before: FormField, after: FormField) -> None:

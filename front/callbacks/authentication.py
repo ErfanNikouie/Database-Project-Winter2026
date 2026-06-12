@@ -4,6 +4,7 @@ from dash import Input, Output, State, callback, no_update
 
 from services.api_client import api_client
 from services.auth_service import build_auth_payload, empty_auth_payload
+from services.session import default_ui_store
 from utils.models import ApiError
 
 
@@ -32,6 +33,7 @@ def handle_login(n_clicks: int | None, username: str | None, password: str | Non
 
 @callback(
     Output("auth-store", "data", allow_duplicate=True),
+    Output("ui-store", "data", allow_duplicate=True),
     Output("_pages_location", "pathname", allow_duplicate=True),
     Input("btn-logout", "n_clicks"),
     State("auth-store", "data"),
@@ -39,7 +41,7 @@ def handle_login(n_clicks: int | None, username: str | None, password: str | Non
 )
 def handle_logout(n_clicks: int | None, auth_data: dict):
     if not n_clicks:
-        return no_update, no_update
+        return no_update, no_update, no_update
     try:
         access = auth_data.get("access_token")
         refresh = auth_data.get("refresh_token")
@@ -47,7 +49,7 @@ def handle_logout(n_clicks: int | None, auth_data: dict):
             api_client.logout(base_url=_base_url(), access_token=access, refresh_token=refresh)
     except ApiError:
         pass
-    return empty_auth_payload(), "/login"
+    return empty_auth_payload(), default_ui_store(), "/login"
 
 
 def _base_url() -> str:

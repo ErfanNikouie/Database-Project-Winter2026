@@ -7,20 +7,26 @@ from dash import html
 from dash_iconify import DashIconify
 
 
-def build_sidebar(menu_tree: list[dict[str, Any]], selected_menu_id: int | None) -> html.Div:
+def build_sidebar(
+    menu_tree: list[dict[str, Any]],
+    selected_menu_id: int | None,
+    expanded_folder_ids: list[int] | None = None,
+) -> html.Div:
     if not menu_tree:
         return html.Div(dmc.Text("No menus", c="dimmed"), className="sidebar-body")
+
+    expanded = set(expanded_folder_ids or [])
 
     return html.Div(
         [
             dmc.Text("Navigation", fw=600, mb="sm"),
-            html.Div([_build_menu_node(node, selected_menu_id) for node in menu_tree], className="menu-tree"),
+            html.Div([_build_menu_node(node, selected_menu_id, expanded) for node in menu_tree], className="menu-tree"),
         ],
         className="sidebar-body",
     )
 
 
-def _build_menu_node(node: dict[str, Any], selected_menu_id: int | None):
+def _build_menu_node(node: dict[str, Any], selected_menu_id: int | None, expanded_folder_ids: set[int]):
     children = node.get("children") or []
     form = node.get("form")
 
@@ -31,13 +37,14 @@ def _build_menu_node(node: dict[str, Any], selected_menu_id: int | None):
                     [
                         dmc.AccordionControl(node["name"], icon=DashIconify(icon="mdi:folder")),
                         dmc.AccordionPanel([
-                            _build_menu_node(child, selected_menu_id) for child in children
+                            _build_menu_node(child, selected_menu_id, expanded_folder_ids) for child in children
                         ]),
                     ],
                     value=f"menu-folder-{node['id']}",
                 )
             ],
-            value=f"menu-folder-{node['id']}",
+            id={"type": "menu-folder", "folder_id": node["id"]},
+            value=f"menu-folder-{node['id']}" if int(node["id"]) in expanded_folder_ids else None,
             variant="contained",
             radius="md",
             className="menu-folder",

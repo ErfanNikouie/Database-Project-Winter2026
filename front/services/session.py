@@ -11,6 +11,7 @@ def default_ui_store() -> dict:
     return {
         "selected_menu_id": None,
         "selected_menu": None,
+        "expanded_menu_folders": [],
         "menu_tree": [],
         "menu_tree_etag": None,
         "metadata_version": "",

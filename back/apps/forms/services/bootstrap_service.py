@@ -67,7 +67,7 @@ SYSTEM_FORM_DEFINITIONS = [
         "fields": [
             ("form_id", FormFieldType.FOREIGN_KEY, True),
             ("name", FormFieldType.STRING, True),
-            ("type", FormFieldType.STRING, True),
+            ("type", FormFieldType.LOOKUP, True),
             ("mandatory", FormFieldType.BOOLEAN, True),
             ("unique", FormFieldType.BOOLEAN, True),
             ("lookup_id", FormFieldType.FOREIGN_KEY, False),
@@ -128,6 +128,8 @@ class BootstrapService:
     def bootstrap(cls) -> None:
         root_group = cls._ensure_root_group()
         cls._ensure_root_user(root_group)
+        lookup_by_name = cls._ensure_default_lookups()
+        system_field_options = cls._build_system_field_options(lookup_by_name)
         form_by_table: dict[str, Form] = {}
 
         for form_definition in SYSTEM_FORM_DEFINITIONS:
@@ -142,7 +144,7 @@ class BootstrapService:
             form_by_table[form.table_name] = form
 
             for index, (name, field_type, mandatory) in enumerate(form_definition["fields"]):
-                field_options = SYSTEM_FIELD_OPTIONS.get((form.table_name, name), {})
+                field_options = system_field_options.get((form.table_name, name), {})
                 FormField.objects.update_or_create(
                     form=form,
                     name=name,
@@ -160,8 +162,6 @@ class BootstrapService:
                 )
 
         cls._ensure_system_menu_tree(root_group, form_by_table)
-
-        cls._ensure_default_lookups()
 
     @staticmethod
     def _ensure_root_group() -> UserGroup:
@@ -187,13 +187,33 @@ class BootstrapService:
         user.groups_ref.add(root_group)
 
     @staticmethod
-    def _ensure_default_lookups() -> None:
+    def _ensure_default_lookups() -> dict[str, Lookup]:
         boolean_lookup, _ = Lookup.objects.get_or_create(
             name="BooleanChoice",
             defaults={"description": "System lookup for true/false labels"},
         )
         LookupValue.objects.get_or_create(lookup=boolean_lookup, value="True")
         LookupValue.objects.get_or_create(lookup=boolean_lookup, value="False")
+
+        field_type_lookup, _ = Lookup.objects.get_or_create(
+            name="FieldType",
+            defaults={"description": "Supported runtime field types"},
+        )
+        for value in [choice.value for choice in FormFieldType]:
+            LookupValue.objects.get_or_create(lookup=field_type_lookup, value=value)
+
+        return {
+            "BooleanChoice": boolean_lookup,
+            "FieldType": field_type_lookup,
+        }
+
+    @staticmethod
+    def _build_system_field_options(lookup_by_name: dict[str, Lookup]) -> dict[tuple[str, str], dict[str, str | int]]:
+        options: dict[tuple[str, str], dict[str, str | int]] = dict(SYSTEM_FIELD_OPTIONS)
+        field_type_lookup = lookup_by_name.get("FieldType")
+        if field_type_lookup:
+            options[("form_field", "type")] = {"lookup_id": int(field_type_lookup.id)}
+        return options
 
     @classmethod
     def _ensure_system_menu_tree(cls, root_group: UserGroup, form_by_table: dict[str, Form]) -> None:

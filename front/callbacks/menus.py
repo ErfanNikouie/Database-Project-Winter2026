@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dash import Input, Output, State, callback
+from dash import ALL, Input, Output, State, callback, no_update
 
 from layouts.sidebar import build_sidebar
 from services.metadata_service import fetch_metadata_version
@@ -23,8 +23,12 @@ def load_menus(auth_data: dict, pathname: str, crud_event: dict | None, ui_store
 
     ui = dict(ui_store or {})
     selected_menu_id = _extract_menu_id(pathname)
-    if selected_menu_id:
+    if selected_menu_id is not None:
         ui["selected_menu_id"] = selected_menu_id
+    else:
+        ui["selected_menu_id"] = None
+
+    expanded_folder_ids = [int(item) for item in (ui.get("expanded_menu_folders") or []) if str(item).isdigit()]
 
     etag = ui.get("menu_tree_etag")
     if isinstance(crud_event, dict) and crud_event.get("action") in {"insert", "edit", "delete"}:
@@ -41,10 +45,34 @@ def load_menus(auth_data: dict, pathname: str, crud_event: dict | None, ui_store
         )
         ui["menu_tree"] = items
         ui["menu_tree_etag"] = next_etag
+        if selected_menu_id is not None:
+            expanded_folder_ids = sorted(set(expanded_folder_ids) | _ancestor_folder_ids(items, selected_menu_id))
+            ui["expanded_menu_folders"] = expanded_folder_ids
     except ApiError:
         items = ui.get("menu_tree", [])
 
-    return ui, build_sidebar(items, ui.get("selected_menu_id"))
+    return ui, build_sidebar(items, ui.get("selected_menu_id"), ui.get("expanded_menu_folders"))
+
+
+@callback(
+    Output("ui-store", "data", allow_duplicate=True),
+    Input({"type": "menu-folder", "folder_id": ALL}, "value"),
+    State({"type": "menu-folder", "folder_id": ALL}, "id"),
+    State("ui-store", "data"),
+    prevent_initial_call=True,
+)
+def track_expanded_menu_folders(values: list[str | None], folder_ids: list[dict], ui_store: dict):
+    if not folder_ids:
+        return no_update
+
+    expanded: list[int] = []
+    for value, folder_id in zip(values or [], folder_ids):
+        if value and isinstance(folder_id, dict) and folder_id.get("folder_id") is not None:
+            expanded.append(int(folder_id["folder_id"]))
+
+    ui = dict(ui_store or {})
+    ui["expanded_menu_folders"] = sorted(set(expanded))
+    return ui
 
 
 def _extract_menu_id(pathname: str | None) -> int | None:
@@ -60,6 +88,26 @@ def _base_url() -> str:
     from api.base import DEFAULT_BASE_URL
 
     return DEFAULT_BASE_URL
+
+
+def _ancestor_folder_ids(menu_tree: list[dict], selected_menu_id: int) -> set[int]:
+    ancestors: set[int] = set()
+
+    def walk(nodes: list[dict], path: list[int]) -> bool:
+        for node in nodes:
+            node_id = node.get("id")
+            children = node.get("children") or []
+
+            if node_id == selected_menu_id:
+                ancestors.update(path)
+                return True
+
+            if children and walk(children, [*path, int(node_id)]):
+                return True
+        return False
+
+    walk(menu_tree or [], [])
+    return ancestors
 
 
 
