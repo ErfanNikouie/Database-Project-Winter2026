@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dash import Input, Output, State, callback, no_update
+from dash import ALL, Input, Output, State, callback, no_update
 
 from components.dynamic_table import build_empty_grid, build_grid, build_toolbar
 from components.filters import build_filter_section
@@ -43,14 +43,14 @@ def load_schema(active_menu_id: str | None, ui_store: dict, auth_data: dict):
     Output("dynamic-toolbar", "children"),
     Output("dynamic-grid-wrapper", "children"),
     Output("dynamic-page-error", "children"),
-    Input("btn-refresh", "n_clicks"),
+    Input({"type": "toolbar-action", "action": "refresh", "index": ALL}, "n_clicks"),
     Input("active-menu-id", "data"),
     State("auth-store", "data"),
     State("ui-store", "data"),
     State("schema-store", "data"),
     prevent_initial_call=False,
 )
-def load_rows(_refresh_clicks: int | None, active_menu_id: str | None, auth_data: dict, ui_store: dict, schema: dict):
+def load_rows(_refresh_clicks: list[int] | None, active_menu_id: str | None, auth_data: dict, ui_store: dict, schema: dict):
     if not active_menu_id or not auth_data or not auth_data.get("authenticated"):
         return {"rows": [], "count": 0}, "", build_empty_grid(), ""
 
@@ -58,21 +58,26 @@ def load_rows(_refresh_clicks: int | None, active_menu_id: str | None, auth_data
     if not menu:
         return {"rows": [], "count": 0}, "", build_empty_grid(), "Unknown menu"
 
-    target = {"menu": menu["name"]}
+    form = menu.get("form") or {}
+    if not form.get("name"):
+        return {"rows": [], "count": 0}, "", build_empty_grid(), "Selected menu is not bound to a form"
+    target = {"form": form["name"]}
     permissions = menu.get("permissions", {})
+
+    payload = {
+        **target,
+        "limit": 50,
+        "offset": 0,
+        "sort_by": "id",
+        "sort_direction": "asc",
+        "filters": {},
+    }
 
     try:
         listing = api_client.list_rows(
             base_url=_base_url(),
             access_token=auth_data["access_token"],
-            payload={
-                **target,
-                "limit": 50,
-                "offset": 0,
-                "sort_by": "id",
-                "sort_direction": "asc",
-                "filters": {},
-            },
+            payload=payload,
         )
     except ApiError as exc:
         return {"rows": [], "count": 0}, "", build_empty_grid(), exc.message
@@ -109,4 +114,8 @@ def _base_url() -> str:
     from api.base import DEFAULT_BASE_URL
 
     return DEFAULT_BASE_URL
+
+
+# ...existing code...
+
 

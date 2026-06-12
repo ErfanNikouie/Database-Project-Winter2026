@@ -9,12 +9,12 @@ from utils.models import ApiError
 
 
 @callback(
-    Output("ui-store", "data", allow_duplicate=True),
+    Output("ui-store", "data"),
     Output("sidebar-wrapper", "children"),
     Input("auth-store", "data"),
-    Input("url", "pathname"),
+    Input("_pages_location", "pathname"),
     State("ui-store", "data"),
-    prevent_initial_call=True,
+    prevent_initial_call=False,
 )
 def load_menus(auth_data: dict, pathname: str, ui_store: dict):
     if not auth_data or not auth_data.get("authenticated"):

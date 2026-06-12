@@ -10,7 +10,7 @@ from utils.models import ApiError
 @callback(
     Output("auth-store", "data", allow_duplicate=True),
     Output("login-error", "children"),
-    Output("url", "pathname", allow_duplicate=True),
+    Output("_pages_location", "pathname", allow_duplicate=True),
     Input("login-submit", "n_clicks"),
     State("login-username", "value"),
     State("login-password", "value"),
@@ -32,7 +32,7 @@ def handle_login(n_clicks: int | None, username: str | None, password: str | Non
 
 @callback(
     Output("auth-store", "data", allow_duplicate=True),
-    Output("url", "pathname", allow_duplicate=True),
+    Output("_pages_location", "pathname", allow_duplicate=True),
     Input("btn-logout", "n_clicks"),
     State("auth-store", "data"),
     prevent_initial_call=True,

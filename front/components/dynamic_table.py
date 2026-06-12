@@ -10,10 +10,29 @@ from dash import html
 def build_toolbar(*, can_insert: bool, can_delete: bool, can_print: bool, count: int) -> dmc.Group:
     return dmc.Group(
         [
-            dmc.Button("Insert", id="btn-insert", disabled=not can_insert),
-            dmc.Button("Refresh", id="btn-refresh", variant="default"),
-            dmc.Button("Delete", id="btn-delete", disabled=not can_delete, color="red", variant="light"),
-            dmc.Button("Export CSV", id="btn-export", disabled=not can_print, variant="outline"),
+            dmc.Button(
+                "Insert",
+                id={"type": "toolbar-action", "action": "insert", "index": 0},
+                disabled=not can_insert,
+            ),
+            dmc.Button(
+                "Refresh",
+                id={"type": "toolbar-action", "action": "refresh", "index": 0},
+                variant="default",
+            ),
+            dmc.Button(
+                "Delete",
+                id={"type": "toolbar-action", "action": "delete", "index": 0},
+                disabled=not can_delete,
+                color="red",
+                variant="light",
+            ),
+            dmc.Button(
+                "Export CSV",
+                id={"type": "toolbar-action", "action": "export", "index": 0},
+                disabled=not can_print,
+                variant="outline",
+            ),
             dmc.Badge(f"Count: {count}", color="gray", variant="filled"),
         ],
         justify="space-between",

@@ -37,6 +37,7 @@ def _build_menu_node(node: dict[str, Any], selected_menu_id: int | None):
                     value=f"menu-folder-{node['id']}",
                 )
             ],
+            value=f"menu-folder-{node['id']}",
             variant="contained",
             radius="md",
             className="menu-folder",

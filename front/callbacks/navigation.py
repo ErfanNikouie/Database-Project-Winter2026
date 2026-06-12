@@ -7,9 +7,9 @@ PUBLIC_PATHS = {"/login"}
 
 
 @callback(
-    Output("url", "pathname", allow_duplicate=True),
+    Output("_pages_location", "pathname", allow_duplicate=True),
     Input("auth-store", "data"),
-    Input("url", "pathname"),
+    Input("_pages_location", "pathname"),
     prevent_initial_call=True,
 )
 def guard_routes(auth_data: dict, pathname: str):
@@ -28,16 +28,23 @@ def guard_routes(auth_data: dict, pathname: str):
 @callback(
     Output("navbar-wrapper", "style"),
     Output("sidebar-wrapper", "style"),
-    Input("url", "pathname"),
+    Output("shell-body-wrapper", "style"),
+    Output("content-wrapper", "style"),
+    Input("_pages_location", "pathname"),
 )
 def toggle_shell_chrome(pathname: str):
     if pathname == "/login":
-        return {"display": "none"}, {"display": "none"}
-    return {"display": "block"}, {"display": "block"}
+        return (
+            {"display": "none"},
+            {"display": "none"},
+            {"gridTemplateColumns": "1fr", "minHeight": "100vh"},
+            {"padding": "0", "minHeight": "100vh"},
+        )
+    return ({"display": "block"}, {"display": "block"}, {}, {})
 
 
 @callback(
-    Output("url", "pathname", allow_duplicate=True),
+    Output("_pages_location", "pathname", allow_duplicate=True),
     Input("btn-profile", "n_clicks"),
     prevent_initial_call=True,
 )

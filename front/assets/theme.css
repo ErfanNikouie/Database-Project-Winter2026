@@ -21,3 +21,30 @@
   border: 1px solid rgba(148, 163, 184, 0.2) !important;
 }
 
+/* Dash AG Grid dark theme hardening */
+.ag-theme-alpine-dark,
+.ag-theme-alpine-dark .ag-root-wrapper,
+.ag-theme-alpine-dark .ag-root,
+.ag-theme-alpine-dark .ag-body-viewport,
+.ag-theme-alpine-dark .ag-center-cols-viewport,
+.ag-theme-alpine-dark .ag-header,
+.ag-theme-alpine-dark .ag-row,
+.ag-theme-alpine-dark .ag-cell {
+  background-color: #0f172a !important;
+  color: #e5e7eb !important;
+}
+
+.ag-theme-alpine-dark .ag-header {
+  border-bottom: 1px solid rgba(148, 163, 184, 0.25) !important;
+}
+
+.ag-theme-alpine-dark .ag-row-hover {
+  background-color: rgba(79, 70, 229, 0.16) !important;
+}
+
+.ag-theme-alpine-dark .ag-paging-panel {
+  background: #0f172a !important;
+  border-top: 1px solid rgba(148, 163, 184, 0.25) !important;
+  color: #e5e7eb !important;
+}
+

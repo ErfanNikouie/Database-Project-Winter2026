@@ -11,7 +11,7 @@ from utils.models import ApiError
     Output("profile-active", "value"),
     Output("profile-groups", "value"),
     Output("profile-error", "children"),
-    Input("url", "pathname"),
+    Input("_pages_location", "pathname"),
     State("auth-store", "data"),
     prevent_initial_call=False,
 )
