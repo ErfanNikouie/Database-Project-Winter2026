@@ -68,6 +68,12 @@ class SchemaService:
         column_name = cls.ensure_safe_identifier(field.name)
         column = cls._column_from_field(field)
         engine = get_engine()
+        inspector = inspect(engine)
+        if inspector.has_table(table_name):
+            existing_columns = {column_info["name"] for column_info in inspector.get_columns(table_name)}
+            if column_name in existing_columns:
+                # Metadata may be recreated while the physical schema is already correct.
+                return
         has_rows = cls._table_has_rows(table_name)
         enforce_not_null = not column.nullable
         add_as_nullable = enforce_not_null and has_rows and not field.default_value

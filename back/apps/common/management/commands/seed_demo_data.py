@@ -172,14 +172,6 @@ LOOKUP_DEFINITIONS: dict[str, list[str]] = {
     "Relation": ["Spouse", "Child"],
 }
 
-SYSTEM_MENU_TREE = {
-    "System": {
-        "Users": ["Users", "Groups", "Group Members", "Group Permissions"],
-        "_items": ["Menus", "Forms"],
-        "Forms": ["Forms", "Fields", "Lookups", "Lookup Values"],
-    }
-}
-
 HR_MENU_TREE = {
     "Human Resources": {
         "_items": ["Organization Units", "Employees"],
@@ -361,7 +353,6 @@ class Command(BaseCommand):
         menu_map: dict[str, Menu] = {}
         created_count = 0
 
-        created_count += self._upsert_tree(SYSTEM_MENU_TREE, parent_menu=None, form_map=form_map, menu_map=menu_map)
         created_count += self._upsert_tree(HR_MENU_TREE, parent_menu=None, form_map=form_map, menu_map=menu_map)
 
         summary["menus"]["menus_created"] = created_count
@@ -464,20 +455,8 @@ class Command(BaseCommand):
         *, menu_name: str, parent_menu: Menu, form_map: dict[str, Form], sort_order: int
     ) -> tuple[Menu, bool]:
         if menu_name not in MENU_TO_FORM_TABLE:
-            existing = Menu.objects.filter(name=menu_name, parent_menu=parent_menu, form__isnull=False).first()
-            if existing:
-                changed = (
-                    existing.sort_order != sort_order
-                    or existing.parent_menu_id != parent_menu.id
-                    or existing.is_system is not True
-                )
-                if changed:
-                    existing.sort_order = sort_order
-                    existing.parent_menu = parent_menu
-                    existing.is_system = True
-                    existing.save(update_fields=["sort_order", "parent_menu", "is_system"])
-                return existing, False
-            raise CommandError(f"Menu '{menu_name}' cannot be bound because it has no mapped form.")
+            # Some tree nodes are intentionally form-less. Keep them as valid unbound menus.
+            return Command._upsert_folder_menu(name=menu_name, parent_menu=parent_menu, sort_order=sort_order)
 
         table_name = MENU_TO_FORM_TABLE[menu_name]
         form = form_map.get(table_name)
@@ -518,8 +497,9 @@ class Command(BaseCommand):
         )
 
         created_permissions = 0
-        all_menus = list(Menu.objects.all())
-        for menu in all_menus:
+        seeded_menu_ids = sorted({menu.id for menu in menu_map.values()})
+        scoped_menus = list(Menu.objects.filter(id__in=seeded_menu_ids))
+        for menu in scoped_menus:
             _, created = Permission.objects.update_or_create(
                 menu=menu,
                 group=root_group,
@@ -997,7 +977,7 @@ class Command(BaseCommand):
         self.stdout.write("Menus:")
         self.stdout.write(f"  Created this run: {summary['menus'].get('menus_created', 0)}")
         self.stdout.write(f"  Total target in hierarchy: {summary['menus'].get('menus_total_target', 0)}")
-        self.stdout.write("  Roots: System, Human Resources")
+        self.stdout.write("  Roots: Human Resources")
         self.stdout.write("")
 
         self.stdout.write("Forms:")
