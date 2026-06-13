@@ -37,9 +37,9 @@ class FilterParser:
         if expression is None or str(expression).strip() == "":
             return None
 
-        if field_type in {"String", "Text", "Lookup"}:
+        if field_type in {"String", "Text"}:
             return cls._parse_string_like(field_name, expression, column)
-        if field_type == "ForeignKey":
+        if field_type in {"Lookup", "ForeignKey"}:
             normalized = expression.replace(",", "|")
             return cls._parse_logical_comparison(field_name, "Integer", normalized, column)
         if field_type == "Boolean":

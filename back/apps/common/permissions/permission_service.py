@@ -17,6 +17,11 @@ class PermissionService:
         if not user or not user.is_authenticated:
             raise PermissionDeniedException("Authentication required")
 
+        # Lookup values are shared reference data and must be listable by any
+        # authenticated user regardless of menu/group permission rows.
+        if table_name == "lookup_value" and operation == "list":
+            return
+
         if user.is_superuser:
             return
 
