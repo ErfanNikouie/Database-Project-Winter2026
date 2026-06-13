@@ -24,3 +24,13 @@ def run_report(*, base_url: str, access_token: str, payload: dict[str, Any]) -> 
         payload=payload,
     )
 
+
+def get_report_definition(*, base_url: str, access_token: str, report_id: int) -> dict[str, Any]:
+    return request_json(
+        method="GET",
+        path=f"/api/reports/definition/{report_id}",
+        base_url=base_url,
+        access_token=access_token,
+    )
+
+

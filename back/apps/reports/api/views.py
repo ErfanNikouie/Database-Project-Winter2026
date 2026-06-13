@@ -68,3 +68,22 @@ class RunReportAPIView(APIView):
         )
         return Response({"success": True, "data": result})
 
+
+class ReportDefinitionAPIView(APIView):
+    @extend_schema(
+        tags=["Reports"],
+        operation_id="reports_definition",
+        summary="Get visible report field definition for current user",
+        responses={
+            200: OpenApiResponse(response=GenericSuccessEnvelopeSerializer),
+            400: OpenApiResponse(response=ErrorEnvelopeSerializer),
+            401: OpenApiResponse(response=ErrorEnvelopeSerializer),
+            403: OpenApiResponse(response=ErrorEnvelopeSerializer),
+            404: OpenApiResponse(response=ErrorEnvelopeSerializer),
+        },
+    )
+    def get(self, request, report_id: int):
+        definition = DynamicReportService.get_report_definition(user=request.user, report_id=report_id)
+        return Response({"success": True, "data": definition})
+
+

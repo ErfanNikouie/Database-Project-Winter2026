@@ -32,6 +32,42 @@ def _normalize_key(raw: str) -> str:
 
 class DynamicReportService:
     @classmethod
+    def get_report_definition(cls, *, user, report_id: int) -> dict[str, Any]:
+        report = (
+            Report.objects.select_related("base_form")
+            .prefetch_related("fields__form", "fields__form_field")
+            .filter(id=report_id)
+            .first()
+        )
+        if not report:
+            raise ValidationException("Report does not exist", field="report_id")
+
+        base_form = report.base_form
+        if not cls._can_list_table(user, base_form.table_name):
+            raise PermissionDeniedException("User is not authorized for this operation")
+
+        visible_fields = cls._visible_report_fields(user=user, report=report)
+        if not visible_fields:
+            raise PermissionDeniedException("No accessible fields for this report")
+
+        columns = cls._build_report_columns(visible_fields)
+        return {
+            "report_id": int(report.id),
+            "name": report.name,
+            "description": report.description,
+            "fields": [
+                {
+                    "key": column.key,
+                    "name": column.name,
+                    "type": column.field_type,
+                    "form_table": column.form_table,
+                    "field_name": column.field_name,
+                }
+                for column in columns
+            ],
+        }
+
+    @classmethod
     def list_available_reports(cls, *, user) -> list[dict[str, Any]]:
         reports = Report.objects.select_related("base_form").prefetch_related(
             "fields__form", "fields__form_field"
@@ -127,36 +163,19 @@ class DynamicReportService:
                 from_clause = from_clause.join(tables[next_table], join_condition)
                 joined_tables.add(next_table)
 
-        selected_columns: list[ReportColumn] = []
+        selected_columns = cls._build_report_columns(visible_fields)
         select_exprs = []
-        used_keys: set[str] = set()
         key_to_column: dict[str, tuple[ReportColumn, Any]] = {}
         fallback_key_map: dict[str, str] = {}
 
-        for report_field in sorted(visible_fields, key=lambda item: (item.display_order, item.id)):
-            field_name = report_field.form_field.name
-            table_name = report_field.form.table_name
-            if field_name not in tables[table_name].c:
-                raise ValidationException("Referenced form field does not exist physically", field=field_name)
-            raw_name = report_field.display_name or field_name
-            column_key = _normalize_key(raw_name)
-            while column_key in used_keys:
-                column_key = f"{column_key}_{report_field.id}"
-            used_keys.add(column_key)
-
-            report_column = ReportColumn(
-                key=column_key,
-                name=raw_name,
-                form_table=table_name,
-                field_name=field_name,
-                field_type=report_field.form_field.type,
-            )
-            selected_columns.append(report_column)
-            expr = tables[table_name].c[field_name]
-            select_exprs.append(expr.label(column_key))
-            key_to_column[column_key] = (report_column, expr)
-            if field_name not in fallback_key_map:
-                fallback_key_map[field_name] = column_key
+        for report_column in selected_columns:
+            if report_column.field_name not in tables[report_column.form_table].c:
+                raise ValidationException("Referenced form field does not exist physically", field=report_column.field_name)
+            expr = tables[report_column.form_table].c[report_column.field_name]
+            select_exprs.append(expr.label(report_column.key))
+            key_to_column[report_column.key] = (report_column, expr)
+            if report_column.field_name not in fallback_key_map:
+                fallback_key_map[report_column.field_name] = report_column.key
 
         if not selected_columns:
             raise ValidationException("Report has no selectable fields")
@@ -202,6 +221,7 @@ class DynamicReportService:
                 {
                     "key": column.key,
                     "name": column.name,
+                    "type": column.field_type,
                     "form_table": column.form_table,
                     "field_name": column.field_name,
                 }
@@ -209,6 +229,29 @@ class DynamicReportService:
             ],
             "rows": rows,
         }
+
+    @staticmethod
+    def _build_report_columns(visible_fields: list[ReportField]) -> list[ReportColumn]:
+        columns: list[ReportColumn] = []
+        used_keys: set[str] = set()
+        for report_field in sorted(visible_fields, key=lambda item: (item.display_order, item.id)):
+            field_name = report_field.form_field.name
+            table_name = report_field.form.table_name
+            raw_name = report_field.display_name or field_name
+            column_key = _normalize_key(raw_name)
+            while column_key in used_keys:
+                column_key = f"{column_key}_{report_field.id}"
+            used_keys.add(column_key)
+            columns.append(
+                ReportColumn(
+                    key=column_key,
+                    name=raw_name,
+                    form_table=table_name,
+                    field_name=field_name,
+                    field_type=report_field.form_field.type,
+                )
+            )
+        return columns
 
     @staticmethod
     def _can_list_table(user, table_name: str) -> bool:
@@ -336,37 +379,4 @@ class ReportService:
             rows = connection.execute(stmt).mappings().all()
         return [dict(row) for row in rows]
 
-
-class ReportService:
-    @staticmethod
-    def aggregate(table_name: str, group_by: str, metric_column: str, metric: str = "count") -> list[dict]:
-        engine = get_engine()
-        inspector = inspect(engine)
-        if not inspector.has_table(table_name):
-            raise ValidationException("Table does not exist")
-
-        metadata = MetaData()
-        table = Table(table_name, metadata, autoload_with=engine)
-
-        if group_by not in table.c or metric_column not in table.c:
-            raise ValidationException("Invalid report column")
-
-        metric_functions = {
-            "count": func.count(table.c[metric_column]),
-            "sum": func.sum(table.c[metric_column]),
-            "avg": func.avg(table.c[metric_column]),
-            "min": func.min(table.c[metric_column]),
-            "max": func.max(table.c[metric_column]),
-        }
-        if metric not in metric_functions:
-            raise ValidationException("Unsupported metric")
-
-        stmt = (
-            select(table.c[group_by].label(group_by), metric_functions[metric].label("metric"))
-            .group_by(table.c[group_by])
-            .order_by(table.c[group_by])
-        )
-        with engine.begin() as connection:
-            rows = connection.execute(stmt).mappings().all()
-        return [dict(row) for row in rows]
 

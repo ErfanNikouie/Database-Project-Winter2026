@@ -6,12 +6,15 @@ from dash import dcc, html
 
 import dash_ag_grid as dag
 
+from components.dynamic_page_placeholders import build_callback_placeholders
+
 dash.register_page(__name__, path="/reports/generate", name="Generate Report")
 
 
 def layout() -> html.Div:
     return html.Div(
         [
+            dcc.Store(id="report-definition-store", data={"fields": []}),
             dcc.Store(id="report-result-store", data={"columns": [], "rows": [], "count": 0}),
             dcc.Download(id="report-download"),
             dmc.Group(
@@ -35,15 +38,7 @@ def layout() -> html.Div:
                 mb="md",
                 gap="sm",
             ),
-            dmc.Textarea(
-                id="report-filters-json",
-                label="Filters (JSON)",
-                description="Use report field keys. Example: {\"username\":\"John|Ali\"}",
-                minRows=2,
-                autosize=True,
-                value="{}",
-                mb="sm",
-            ),
+            html.Div(id="report-filter-section"),
             dmc.Text(id="report-count", c="dimmed", mb="sm"),
             dag.AgGrid(
                 id="report-grid",
@@ -59,6 +54,7 @@ def layout() -> html.Div:
                 style={"height": "62vh", "width": "100%"},
             ),
             html.Div(id="report-error", className="page-error"),
+            build_callback_placeholders(include_report_ids=False),
         ],
         className="dynamic-page",
     )

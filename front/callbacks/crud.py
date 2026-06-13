@@ -371,7 +371,7 @@ def handle_edit_modal(
     Output("crud-action-store", "data", allow_duplicate=True),
     Output("dynamic-page-error", "children", allow_duplicate=True),
     Input({"type": "toolbar-action", "action": "delete", "index": ALL}, "n_clicks"),
-    State("dynamic-grid", "selectedRows"),
+    State("dynamic-grid", "selectedRows", allow_optional=True),
     State("active-menu-id-hint", "data", allow_optional=True),
     State("auth-store", "data"),
     State("ui-store", "data"),

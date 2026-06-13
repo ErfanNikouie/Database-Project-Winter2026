@@ -246,10 +246,17 @@ class BootstrapService:
     @classmethod
     def _ensure_system_menu_tree(cls, root_group: UserGroup, form_by_table: dict[str, Form]) -> None:
         system_menu = cls._upsert_folder_menu(name="System", parent_menu=None, sort_order=0)
+        reporting_parent = Menu.objects.filter(name="Reporting", form__isnull=True).order_by("id").first()
+        if reporting_parent:
+            reporting_parent.parent_menu = None
+            reporting_parent.sort_order = 1
+            reporting_parent.is_system = True
+            reporting_parent.save(update_fields=["parent_menu", "sort_order", "is_system"])
+        else:
+            reporting_parent = cls._upsert_folder_menu(name="Reporting", parent_menu=None, sort_order=1)
 
         users_parent = cls._upsert_folder_menu(name="Users", parent_menu=system_menu, sort_order=1)
         forms_parent = cls._upsert_folder_menu(name="Forms", parent_menu=system_menu, sort_order=3)
-        reporting_parent = cls._upsert_folder_menu(name="Reporting", parent_menu=system_menu, sort_order=4)
 
         leaf_definitions = [
             ("Users", "user", users_parent, 1),
@@ -308,11 +315,13 @@ class BootstrapService:
 
         target_fields: list[tuple[Form, str, int, str]] = [
             (base_form, "username", 1, "Username"),
-            (permission_form, "can_view", 2, "Can View"),
-            (permission_form, "can_insert", 3, "Can Insert"),
-            (permission_form, "can_update", 4, "Can Update"),
-            (permission_form, "can_delete", 5, "Can Delete"),
-            (permission_form, "can_print", 6, "Can Print"),
+            (permission_form, "menu_id", 2, "Menu Id"),
+            (permission_form, "group_id", 3, "Group Id"),
+            (permission_form, "can_view", 4, "Can View"),
+            (permission_form, "can_insert", 5, "Can Insert"),
+            (permission_form, "can_update", 6, "Can Update"),
+            (permission_form, "can_delete", 7, "Can Delete"),
+            (permission_form, "can_print", 8, "Can Print"),
         ]
 
         for form, field_name, display_order, display_name in target_fields:
