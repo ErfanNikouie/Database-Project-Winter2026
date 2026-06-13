@@ -20,7 +20,15 @@ def layout() -> html.Div:
             dmc.Group(
                 [
                     dmc.Select(id="report-selector", label="Report", data=[], placeholder="Select report", searchable=True, w=320),
-                    dmc.TextInput(id="report-sort-by", label="Sort By", value="", placeholder="Optional column key", w=220),
+                    dmc.Select(
+                        id="report-sort-by",
+                        label="Sort By",
+                        data=[],
+                        value=None,
+                        searchable=True,
+                        clearable=True,
+                        w=220,
+                    ),
                     dmc.Select(
                         id="report-sort-direction",
                         label="Sort Direction",

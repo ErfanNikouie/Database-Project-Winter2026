@@ -8,6 +8,7 @@ import pandas as pd
 from dash import ALL, Input, Output, State, callback, dcc, html, no_update
 
 from services.api_client import api_client
+from services.display_service import enrich_rows_for_display
 from utils.filter_help import FILTER_HELP_BY_TYPE
 from utils.models import ApiError
 
@@ -44,6 +45,8 @@ def load_available_reports(pathname: str | None, auth_data: dict | None, selecte
 @callback(
     Output("report-definition-store", "data"),
     Output("report-filter-section", "children"),
+    Output("report-sort-by", "data"),
+    Output("report-sort-by", "value"),
     Output("report-error", "children", allow_duplicate=True),
     Input("report-selector", "value"),
     State("_pages_location", "pathname"),
@@ -52,11 +55,11 @@ def load_available_reports(pathname: str | None, auth_data: dict | None, selecte
 )
 def load_report_definition(report_id_value: str | None, pathname: str | None, auth_data: dict | None):
     if pathname != "/reports/generate":
-        return no_update, no_update, no_update
+        return no_update, no_update, no_update, no_update, no_update
     if not report_id_value:
-        return {"fields": []}, html.Div(), ""
+        return {"fields": []}, html.Div(), [], None, ""
     if not auth_data or not auth_data.get("authenticated"):
-        return {"fields": []}, html.Div(), "Authentication required"
+        return {"fields": []}, html.Div(), [], None, "Authentication required"
 
     try:
         definition = api_client.get_report_definition(
@@ -65,9 +68,20 @@ def load_report_definition(report_id_value: str | None, pathname: str | None, au
             report_id=int(report_id_value),
         )
     except ApiError as exc:
-        return {"fields": []}, html.Div(), exc.message
+        return {"fields": []}, html.Div(), [], None, exc.message
 
-    return definition, _build_filter_controls(definition.get("fields") or []), ""
+    fields = definition.get("fields") or []
+    fk_options = _build_fk_filter_options(fields=fields, access_token=auth_data["access_token"])
+    lookup_options = _build_lookup_filter_options(fields=fields, access_token=auth_data["access_token"])
+    sort_options = [{"value": field["key"], "label": field["name"]} for field in fields]
+    default_sort = sort_options[0]["value"] if sort_options else None
+    return (
+        definition,
+        _build_filter_controls(fields, fk_options, lookup_options),
+        sort_options,
+        default_sort,
+        "",
+    )
 
 
 @callback(
@@ -84,6 +98,7 @@ def load_report_definition(report_id_value: str | None, pathname: str | None, au
     State("report-page-size", "value"),
     State("report-page", "value"),
     State("auth-store", "data"),
+    State("report-definition-store", "data"),
     State({"type": "report-filter-field", "key": ALL}, "id"),
     State({"type": "report-filter-field", "key": ALL}, "value"),
     State({"type": "report-filter-date-bound", "key": ALL, "bound": ALL}, "id"),
@@ -98,6 +113,7 @@ def run_selected_report(
     page_size_raw: int | None,
     page_raw: int | None,
     auth_data: dict | None,
+    report_definition: dict | None,
     filter_ids: list[dict[str, Any]] | None,
     filter_values: list[Any] | None,
     date_filter_ids: list[dict[str, Any]] | None,
@@ -136,19 +152,37 @@ def run_selected_report(
     columns = report_data.get("columns", [])
     rows = report_data.get("rows", [])
     count = int(report_data.get("count", 0))
+    schema = {
+        "fields": [
+            {
+                "name": column.get("key"),
+                "type": column.get("type"),
+                "lookup_id": column.get("lookup_id"),
+                "foreign_key_table": column.get("foreign_key_table"),
+                "foreign_key_field": column.get("foreign_key_field"),
+            }
+            for column in columns
+        ]
+    }
+    display_rows, display_columns = enrich_rows_for_display(
+        base_url=_base_url(),
+        access_token=auth_data["access_token"],
+        schema=schema,
+        rows=rows,
+    )
     column_defs = [
         {
-            "field": column["key"],
-            "headerName": column["name"],
+            "field": col_name,
+            "headerName": _column_header(col_name, columns),
             "resizable": True,
             "sortable": True,
             "filter": True,
         }
-        for column in columns
+        for col_name in display_columns
     ]
-    result_store = {"columns": columns, "rows": rows, "count": count}
+    result_store = {"columns": columns, "rows": display_rows, "count": count}
     count_text = f"Rows: {count}"
-    return result_store, column_defs, rows, _grid_options(page_size), count_text, ""
+    return result_store, column_defs, display_rows, _grid_options(page_size), count_text, ""
 
 
 @callback(
@@ -180,7 +214,11 @@ def export_report_csv(n_clicks: int | None, report_result: dict):
     return dcc.send_string(buffer.getvalue(), "report.csv")
 
 
-def _build_filter_controls(fields: list[dict[str, Any]]) -> html.Div:
+def _build_filter_controls(
+    fields: list[dict[str, Any]],
+    fk_options_by_key: dict[str, list[dict[str, str]]],
+    lookup_options_by_key: dict[str, list[dict[str, str]]],
+) -> html.Div:
     controls: list[Any] = []
     for field in fields:
         key = field.get("key")
@@ -200,6 +238,32 @@ def _build_filter_controls(fields: list[dict[str, Any]]) -> html.Div:
                         {"label": "False", "value": "False"},
                     ],
                     value="",
+                )
+            )
+            continue
+
+        if field_type == "ForeignKey":
+            controls.append(
+                dmc.Select(
+                    id={"type": "report-filter-field", "key": key},
+                    label=f"{label} ({field_type})",
+                    data=fk_options_by_key.get(key, []),
+                    value=None,
+                    searchable=True,
+                    clearable=True,
+                )
+            )
+            continue
+
+        if field_type == "Lookup":
+            controls.append(
+                dmc.Select(
+                    id={"type": "report-filter-field", "key": key},
+                    label=f"{label} ({field_type})",
+                    data=lookup_options_by_key.get(key, []),
+                    value=None,
+                    searchable=True,
+                    clearable=True,
                 )
             )
             continue
@@ -333,6 +397,73 @@ def _grid_options(page_size: int) -> dict:
         "paginationPageSize": page_size,
         "animateRows": True,
     }
+
+
+def _build_fk_filter_options(*, fields: list[dict[str, Any]], access_token: str) -> dict[str, list[dict[str, str]]]:
+    options: dict[str, list[dict[str, str]]] = {}
+    for field in fields:
+        key = field.get("key")
+        foreign_key_table = field.get("foreign_key_table")
+        if not key or field.get("type") != "ForeignKey" or not foreign_key_table:
+            continue
+        try:
+            rows = api_client.list_options(
+                base_url=_base_url(),
+                access_token=access_token,
+                payload={"table": foreign_key_table, "limit": 200, "query": ""},
+            )
+        except ApiError:
+            options[str(key)] = []
+            continue
+        rows = sorted(rows, key=lambda row: int(row["id"]))
+        options[str(key)] = [
+            {"value": str(row["id"]), "label": f"{row['id']}. {row['label']}"}
+            for row in rows
+        ]
+    return options
+
+
+def _build_lookup_filter_options(*, fields: list[dict[str, Any]], access_token: str) -> dict[str, list[dict[str, str]]]:
+    options: dict[str, list[dict[str, str]]] = {}
+    for field in fields:
+        key = field.get("key")
+        lookup_id = field.get("lookup_id")
+        if not key or field.get("type") != "Lookup" or not lookup_id:
+            continue
+        try:
+            rows = api_client.list_rows(
+                base_url=_base_url(),
+                access_token=access_token,
+                payload={
+                    "form": "LookupValue",
+                    "limit": 1000,
+                    "offset": 0,
+                    "sort_by": "value",
+                    "sort_direction": "asc",
+                    "filters": {"lookup_id": int(lookup_id)},
+                },
+            ).get("items", [])
+        except ApiError:
+            options[str(key)] = []
+            continue
+        options[str(key)] = [
+            {"value": str(row["id"]), "label": f"{row['id']}. {row.get('value', row['id'])}"}
+            for row in rows
+        ]
+    return options
+
+
+def _column_header(column_key: str, columns_meta: list[dict[str, Any]]) -> str:
+    if column_key.endswith("__label"):
+        base_key = column_key[: -len("__label")]
+        for column in columns_meta:
+            if column.get("key") == base_key:
+                return f"{column.get('name', base_key)} Label"
+        return column_key
+    for column in columns_meta:
+        if column.get("key") == column_key:
+            return str(column.get("name") or column_key)
+    return column_key
 
 
 def _base_url() -> str:

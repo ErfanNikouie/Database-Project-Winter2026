@@ -39,7 +39,7 @@ def build_callback_placeholders(*, include_report_ids: bool = True) -> html.Div:
         children.extend(
             [
                 dmc.Select(id="report-selector", data=[], value=None),
-                dmc.TextInput(id="report-sort-by", value=""),
+                dmc.Select(id="report-sort-by", data=[], value=None),
                 dmc.Select(id="report-sort-direction", data=[{"value": "asc", "label": "asc"}], value="asc"),
                 dcc.Store(id="report-definition-store", data={"fields": []}),
                 dmc.NumberInput(id="report-page-size", value=100),

@@ -555,6 +555,98 @@ def _resolve_page_number(page_number_values: list[int] | None) -> int:
     return parsed if parsed >= 1 else 1
 
 
+@callback(
+    Output({"type": "form-field-insert", "name": "form_field_id"}, "data"),
+    Input({"type": "form-field-insert", "name": "form_id"}, "value", allow_optional=True),
+    State("active-menu-id-hint", "data", allow_optional=True),
+    State("auth-store", "data"),
+    State("ui-store", "data"),
+    prevent_initial_call=True,
+)
+def load_report_field_options_for_insert(
+    selected_form_id: str | int | None,
+    active_menu_id: str | None,
+    auth_data: dict,
+    ui_store: dict,
+):
+    return _load_report_field_form_field_options(
+        selected_form_id=selected_form_id,
+        active_menu_id=active_menu_id,
+        auth_data=auth_data,
+        ui_store=ui_store,
+    )
+
+
+@callback(
+    Output({"type": "form-field-edit", "name": "form_field_id"}, "data"),
+    Input({"type": "form-field-edit", "name": "form_id"}, "value", allow_optional=True),
+    State("active-menu-id-hint", "data", allow_optional=True),
+    State("auth-store", "data"),
+    State("ui-store", "data"),
+    prevent_initial_call=True,
+)
+def load_report_field_options_for_edit(
+    selected_form_id: str | int | None,
+    active_menu_id: str | None,
+    auth_data: dict,
+    ui_store: dict,
+):
+    return _load_report_field_form_field_options(
+        selected_form_id=selected_form_id,
+        active_menu_id=active_menu_id,
+        auth_data=auth_data,
+        ui_store=ui_store,
+    )
+
+
+def _load_report_field_form_field_options(
+    *,
+    selected_form_id: str | int | None,
+    active_menu_id: str | None,
+    auth_data: dict,
+    ui_store: dict,
+):
+    if not active_menu_id or not auth_data or not auth_data.get("authenticated"):
+        return []
+
+    menu = _resolve_menu(ui_store, int(active_menu_id))
+    if ((menu or {}).get("form") or {}).get("table_name") != "report_field":
+        return no_update
+
+    if selected_form_id in (None, ""):
+        return []
+
+    try:
+        form_id_int = int(str(selected_form_id))
+    except (TypeError, ValueError):
+        return []
+
+    try:
+        rows = api_client.list_rows(
+            base_url=_base_url(),
+            access_token=auth_data["access_token"],
+            payload={
+                "form": "FormField",
+                "limit": 1000,
+                "offset": 0,
+                "sort_by": "sort_order",
+                "sort_direction": "asc",
+                "filters": {"form_id": form_id_int},
+            },
+        ).get("items", [])
+    except ApiError:
+        return []
+
+    return [
+        {
+            "value": str(row["id"]),
+            "label": f"{row['id']}. {row.get('name', row['id'])}",
+        }
+        for row in rows
+        if row.get("id") is not None
+    ]
+
+
 def _build_insert_payload(field_ids: list[dict[str, Any]] | None, field_values: list[Any] | None) -> dict[str, Any]:
     return _build_typed_payload(field_ids, field_values, None)
 

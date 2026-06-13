@@ -22,6 +22,9 @@ class ReportColumn:
     form_table: str
     field_name: str
     field_type: str
+    lookup_id: int | None = None
+    foreign_key_table: str = ""
+    foreign_key_field: str = "id"
 
 
 def _normalize_key(raw: str) -> str:
@@ -62,6 +65,9 @@ class DynamicReportService:
                     "type": column.field_type,
                     "form_table": column.form_table,
                     "field_name": column.field_name,
+                    "lookup_id": column.lookup_id,
+                    "foreign_key_table": column.foreign_key_table,
+                    "foreign_key_field": column.foreign_key_field,
                 }
                 for column in columns
             ],
@@ -164,6 +170,17 @@ class DynamicReportService:
                 joined_tables.add(next_table)
 
         selected_columns = cls._build_report_columns(visible_fields)
+        if not any(column.form_table == base_form.table_name and column.field_name == "id" for column in selected_columns):
+            selected_columns = [
+                ReportColumn(
+                    key="base_id",
+                    name="Id",
+                    form_table=base_form.table_name,
+                    field_name="id",
+                    field_type="Integer",
+                ),
+                *selected_columns,
+            ]
         select_exprs = []
         key_to_column: dict[str, tuple[ReportColumn, Any]] = {}
         fallback_key_map: dict[str, str] = {}
@@ -224,6 +241,9 @@ class DynamicReportService:
                     "type": column.field_type,
                     "form_table": column.form_table,
                     "field_name": column.field_name,
+                    "lookup_id": column.lookup_id,
+                    "foreign_key_table": column.foreign_key_table,
+                    "foreign_key_field": column.foreign_key_field,
                 }
                 for column in selected_columns
             ],
@@ -235,7 +255,8 @@ class DynamicReportService:
         columns: list[ReportColumn] = []
         used_keys: set[str] = set()
         for report_field in sorted(visible_fields, key=lambda item: (item.display_order, item.id)):
-            field_name = report_field.form_field.name
+            form_field = report_field.form_field
+            field_name = form_field.name
             table_name = report_field.form.table_name
             raw_name = report_field.display_name or field_name
             column_key = _normalize_key(raw_name)
@@ -248,7 +269,10 @@ class DynamicReportService:
                     name=raw_name,
                     form_table=table_name,
                     field_name=field_name,
-                    field_type=report_field.form_field.type,
+                    field_type=form_field.type,
+                    lookup_id=int(form_field.lookup_id) if form_field.lookup_id else None,
+                    foreign_key_table=form_field.foreign_key_table or "",
+                    foreign_key_field=form_field.foreign_key_field or "id",
                 )
             )
         return columns
