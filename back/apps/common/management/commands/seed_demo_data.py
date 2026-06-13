@@ -232,6 +232,7 @@ class Command(BaseCommand):
             lookup_map = self._ensure_lookups(summary)
             form_map = self._ensure_forms_and_fields(lookup_map, summary)
             self._ensure_physical_tables_and_columns(form_map)
+            self._sync_fields_from_physical_tables(form_map, summary)
             menu_map = self._ensure_menu_hierarchy(form_map, summary)
             self._ensure_demo_groups_and_users(summary)
             self._ensure_permissions_and_security(menu_map, summary)
@@ -347,6 +348,85 @@ class Command(BaseCommand):
                 if field.name not in existing_columns:
                     SchemaService.add_field(form, field)
                     existing_columns.add(field.name)
+
+    def _sync_fields_from_physical_tables(self, form_map: dict[str, Form], summary: dict[str, dict[str, int]]) -> None:
+        self.stdout.write("Syncing metadata from existing physical columns ...")
+        engine = get_engine()
+        inspector = inspect(engine)
+        synced_fields = 0
+
+        for form in form_map.values():
+            if not inspector.has_table(form.table_name):
+                continue
+
+            existing_field_names = set(form.fields.values_list("name", flat=True))
+            next_sort_order = (form.fields.order_by("-sort_order").values_list("sort_order", flat=True).first() or 0) + 1
+
+            fk_map: dict[str, tuple[str, str]] = {}
+            for foreign_key in inspector.get_foreign_keys(form.table_name):
+                constrained = foreign_key.get("constrained_columns") or []
+                referred = foreign_key.get("referred_columns") or []
+                referred_table = foreign_key.get("referred_table")
+                if len(constrained) == 1 and referred_table and referred:
+                    fk_map[str(constrained[0])] = (str(referred_table), str(referred[0]))
+
+            unique_columns = {
+                str(constraint["column_names"][0])
+                for constraint in inspector.get_unique_constraints(form.table_name)
+                if len(constraint.get("column_names") or []) == 1
+            }
+
+            for column in inspector.get_columns(form.table_name):
+                column_name = str(column["name"])
+                if column_name in {"id", "created_at", "updated_at"}:
+                    continue
+                if column_name in existing_field_names:
+                    continue
+
+                foreign_key_table = ""
+                foreign_key_field = "id"
+                field_type = self._infer_field_type(column)
+                if column_name in fk_map:
+                    field_type = FormFieldType.FOREIGN_KEY
+                    foreign_key_table, foreign_key_field = fk_map[column_name]
+
+                FormField.objects.create(
+                    form=form,
+                    name=column_name,
+                    type=field_type,
+                    mandatory=not bool(column.get("nullable", True)),
+                    unique=column_name in unique_columns,
+                    lookup=None,
+                    foreign_key_table=foreign_key_table,
+                    foreign_key_field=foreign_key_field,
+                    default_value="",
+                    sort_order=next_sort_order,
+                    is_system=False,
+                )
+                existing_field_names.add(column_name)
+                next_sort_order += 1
+                synced_fields += 1
+
+        summary["forms"]["form_fields_synced_from_physical"] = synced_fields
+
+    @staticmethod
+    def _infer_field_type(column: dict) -> str:
+        type_name = str(column.get("type", "")).upper()
+        if "BOOL" in type_name:
+            return FormFieldType.BOOLEAN
+        if "TIMESTAMP" in type_name or "DATETIME" in type_name:
+            return FormFieldType.DATETIME
+        if type_name.startswith("DATE"):
+            return FormFieldType.DATE
+        if "NUMERIC" in type_name or "DECIMAL" in type_name:
+            return FormFieldType.DECIMAL
+        if "DOUBLE" in type_name or "REAL" in type_name or "FLOAT" in type_name:
+            return FormFieldType.DOUBLE
+        if "INT" in type_name:
+            return FormFieldType.INTEGER
+        if "TEXT" in type_name:
+            return FormFieldType.TEXT
+        return FormFieldType.STRING
 
     def _ensure_menu_hierarchy(self, form_map: dict[str, Form], summary: dict[str, dict[str, int]]) -> dict[str, Menu]:
         self.stdout.write("Ensuring menu hierarchy ...")
@@ -984,6 +1064,9 @@ class Command(BaseCommand):
         self.stdout.write(f"  Created this run: {summary['forms'].get('forms_created', 0)}")
         self.stdout.write(f"  Total expected forms: {summary['forms'].get('forms_total', 0)}")
         self.stdout.write(f"  Form fields created this run: {summary['forms'].get('form_fields_created', 0)}")
+        self.stdout.write(
+            f"  Form fields synced from existing tables: {summary['forms'].get('form_fields_synced_from_physical', 0)}"
+        )
         self.stdout.write(f"  Total expected form fields: {summary['forms'].get('form_fields_total', 0)}")
         self.stdout.write("")
 

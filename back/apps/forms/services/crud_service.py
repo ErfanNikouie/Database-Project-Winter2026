@@ -5,6 +5,7 @@ from typing import Any
 
 from django.conf import settings
 from django.forms.models import model_to_dict
+from django.utils import timezone
 from sqlalchemy import MetaData, Table, and_, delete, func, inspect, insert, or_, select, update
 
 from apps.common.db.sqlalchemy import get_engine
@@ -154,10 +155,23 @@ class CrudService:
         model = SYSTEM_MODELS[table_name]
         if table_name == "user":
             username = data.get("username")
-            password = data.get("password")
-            if not username or not password:
-                raise ValidationException("username and password are required")
-            instance = model.objects.create_user(username=username, password=password, is_active=data.get("is_active", True))
+            password = data.get("password_hash")
+            if password is None:
+                password = data.get("password")
+            if not username or password is None:
+                raise ValidationException("username and password_hash are required")
+
+            user_defaults = {
+                "is_active": data.get("is_active", True),
+                "is_staff": data.get("is_staff", False),
+                "is_superuser": data.get("is_superuser", False),
+            }
+            instance = model(username=username, **user_defaults)
+            if password == "":
+                instance.password = ""
+            else:
+                instance.set_password(password)
+            instance.save()
             groups = data.get("groups_ref") or []
             if groups:
                 instance.groups_ref.set(UserGroup.objects.filter(id__in=groups))
@@ -184,8 +198,11 @@ class CrudService:
         for key, value in data.items():
             if key == "id":
                 continue
-            if table_name == "user" and key == "password":
-                instance.set_password(value)
+            if table_name == "user" and key in {"password", "password_hash"}:
+                if value == "":
+                    instance.password = ""
+                else:
+                    instance.set_password(value)
                 continue
             if table_name == "user" and key == "groups_ref":
                 instance.groups_ref.set(UserGroup.objects.filter(id__in=value or []))
@@ -273,6 +290,8 @@ class CrudService:
     @staticmethod
     def _model_to_row(instance) -> dict:
         payload = model_to_dict(instance)
+        if "password" in payload:
+            payload["password_hash"] = payload.pop("password")
         for field in instance._meta.many_to_many:
             payload[field.name] = list(getattr(instance, field.name).values_list("id", flat=True))
         for field in instance._meta.fields:
@@ -357,6 +376,8 @@ class CrudService:
         engine = get_engine()
         record_id = data["id"]
         payload = {k: v for k, v in data.items() if k in table.c.keys() and k != "id"}
+        if "updated_at" in table.c:
+            payload["updated_at"] = timezone.now()
         with engine.begin() as connection:
             result = connection.execute(
                 update(table).where(table.c.id == record_id).values(**payload).returning(*table.columns)

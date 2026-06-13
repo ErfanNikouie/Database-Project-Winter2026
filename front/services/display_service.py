@@ -3,6 +3,7 @@ from __future__ import annotations
 from typing import Any
 
 from services.api_client import api_client
+from utils.models import ApiError
 
 
 def enrich_rows_for_display(
@@ -37,22 +38,19 @@ def enrich_rows_for_display(
             ids = sorted({int(row[name]) for row in rows if isinstance(row.get(name), int)})
             if not ids:
                 continue
-            options = api_client.list_options(
+            label_map = _load_foreign_key_label_map(
                 base_url=base_url,
                 access_token=access_token,
-                payload={
-                    "table": field["foreign_key_table"],
-                    "ids": ids,
-                    "limit": max(50, len(ids)),
-                },
+                foreign_key_table=str(field["foreign_key_table"]),
+                ids=ids,
             )
-            label_map = {int(opt["id"]): str(opt["label"]) for opt in options}
             label_column = f"{name}__label"
             label_columns_by_field[name] = label_column
             for row in display_rows:
                 value = row.get(name)
                 if isinstance(value, int):
-                    row[label_column] = label_map.get(value, "")
+                    label = label_map.get(value, "")
+                    row[label_column] = label or ""
                 else:
                     row[label_column] = ""
 
@@ -89,7 +87,7 @@ def enrich_rows_for_display(
 
     # Keep any server-provided columns that are not in schema ordering.
     for col in display_rows[0].keys():
-        if col not in base_columns and col != "password_hash":
+        if col not in base_columns:
             base_columns.append(col)
 
     return display_rows, base_columns
@@ -101,7 +99,7 @@ def _ordered_schema_fields(fields: list[dict[str, Any]]) -> list[str]:
 
     for field in fields:
         name = field.get("name")
-        if not name or name == "password_hash":
+        if not name:
             continue
         if name == "id":
             continue
@@ -122,5 +120,67 @@ def _field_by_name(fields: list[dict[str, Any]], name: str) -> dict[str, Any]:
         if field.get("name") == name:
             return field
     return {}
+
+
+def _load_foreign_key_label_map(
+    *,
+    base_url: str,
+    access_token: str,
+    foreign_key_table: str,
+    ids: list[int],
+) -> dict[int, str]:
+    label_map: dict[int, str] = {}
+    try:
+        options = api_client.list_options(
+            base_url=base_url,
+            access_token=access_token,
+            payload={
+                "table": foreign_key_table,
+                "ids": ids,
+                "limit": max(50, len(ids)),
+            },
+        )
+        label_map = {int(opt["id"]): str(opt["label"]) for opt in options}
+    except ApiError:
+        return {}
+
+    if foreign_key_table != "employee":
+        return label_map
+
+    # Employee FKs should display full name for readability.
+    employee_name_map = _load_employee_full_name_map(base_url=base_url, access_token=access_token, ids=ids)
+    if employee_name_map:
+        label_map.update(employee_name_map)
+    return label_map
+
+
+def _load_employee_full_name_map(*, base_url: str, access_token: str, ids: list[int]) -> dict[int, str]:
+    try:
+        listing = api_client.list_rows(
+            base_url=base_url,
+            access_token=access_token,
+            payload={
+                "form": "Employee",
+                "limit": max(50, len(ids)),
+                "offset": 0,
+                "sort_by": "id",
+                "sort_direction": "asc",
+                "filters": {"id": "|".join(str(value) for value in ids)},
+            },
+        )
+    except ApiError:
+        return {}
+
+    full_name_map: dict[int, str] = {}
+    for item in listing.get("items", []):
+        employee_id = item.get("id")
+        if not isinstance(employee_id, int):
+            continue
+        first_name = str(item.get("first_name") or "").strip()
+        last_name = str(item.get("last_name") or "").strip()
+        full_name = " ".join(part for part in [first_name, last_name] if part).strip()
+        if full_name:
+            full_name_map[employee_id] = full_name
+    return full_name_map
 
 

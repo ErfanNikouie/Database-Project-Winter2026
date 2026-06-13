@@ -19,7 +19,7 @@ def build_dynamic_form(
 ) -> html.Div:
     controls: list[Any] = []
     initial = initial_data or {}
-    system_fields = {"id", "created_at", "updated_at", "password_hash"}
+    system_fields = {"id", "created_at", "updated_at"}
     fk_options = fk_options_by_field or {}
     lookup_options = lookup_options_by_field or {}
 
@@ -35,6 +35,10 @@ def build_dynamic_form(
             description.append("system")
         if field.get("unique"):
             description.append("unique")
+        if name == "password_hash":
+            description.append("required")
+            if mode == "edit":
+                description.append("use __EMPTY__ to reset on next login")
         desc_text = " | ".join(description) if description else None
 
         if is_locked:
@@ -50,22 +54,32 @@ def build_dynamic_form(
             continue
 
         if field["type"] == "ForeignKey":
+            select_value = None if value in (None, "") else str(value)
+            select_data = _with_current_value_option(
+                _sort_options_by_id(fk_options.get(name, [])),
+                select_value,
+            )
             control = dmc.Select(
                 id=component_id,
                 label=label,
-                data=fk_options.get(name, []),
-                value=None if value in (None, "") else str(value),
+                data=select_data,
+                value=select_value,
                 searchable=True,
                 clearable=True,
                 required=required,
                 description=desc_text,
             )
         elif field["type"] == "Lookup":
+            select_value = None if value in (None, "") else str(value)
+            select_data = _with_current_value_option(
+                _sort_options_by_id(lookup_options.get(name, [])),
+                select_value,
+            )
             control = dmc.Select(
                 id=component_id,
                 label=label,
-                data=lookup_options.get(name, []),
-                value=None if value in (None, "") else str(value),
+                data=select_data,
+                value=select_value,
                 searchable=True,
                 clearable=True,
                 required=required,
@@ -100,5 +114,25 @@ def build_dynamic_form(
         controls.append(control)
 
     return html.Div(controls, className="dynamic-form-grid")
+
+
+def _sort_options_by_id(options: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def key_fn(option: dict[str, Any]) -> tuple[int, int | str]:
+        raw_value = option.get("value")
+        try:
+            return (0, int(float(str(raw_value))))
+        except (TypeError, ValueError):
+            return (1, str(raw_value or ""))
+
+    return sorted(options, key=key_fn)
+
+
+def _with_current_value_option(options: list[dict[str, Any]], current_value: str | None) -> list[dict[str, Any]]:
+    if current_value in (None, ""):
+        return options
+    normalized = str(current_value)
+    if any(str(option.get("value")) == normalized for option in options):
+        return options
+    return [{"value": normalized, "label": normalized}, *options]
 
 

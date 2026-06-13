@@ -39,7 +39,7 @@ def build_filter_section(
             control = dmc.Select(
                 id=field_id,
                 label=f"{display_name} ({field_type})",
-                data=fk_options.get(name, []),
+                data=_sort_options_by_id(fk_options.get(name, [])),
                 value=None,
                 searchable=True,
                 clearable=True,
@@ -48,7 +48,7 @@ def build_filter_section(
             control = dmc.Select(
                 id=field_id,
                 label=f"{display_name} ({field_type})",
-                data=lookup_options.get(name, []),
+                data=_sort_options_by_id(lookup_options.get(name, [])),
                 value=None,
                 searchable=True,
                 clearable=True,
@@ -109,4 +109,16 @@ def build_filter_section(
         ],
         value=[],
     )
+
+
+def _sort_options_by_id(options: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def key_fn(option: dict[str, Any]) -> tuple[int, int | str]:
+        raw_value = option.get("value")
+        try:
+            return (0, int(float(str(raw_value))))
+        except (TypeError, ValueError):
+            return (1, str(raw_value or ""))
+
+    return sorted(options, key=key_fn)
+
 

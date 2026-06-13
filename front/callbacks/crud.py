@@ -78,6 +78,8 @@ def load_schema(active_menu_id: str | None, ui_store: dict, auth_data: dict):
     Output("dynamic-grid-wrapper", "children"),
     Output("dynamic-page-error", "children"),
     Input({"type": "toolbar-action", "action": "refresh", "index": ALL}, "n_clicks"),
+    Input({"type": "toolbar-action", "action": "page-size", "index": ALL}, "value"),
+    Input({"type": "toolbar-action", "action": "page-number", "index": ALL}, "value"),
     Input("active-menu-id-hint", "data", allow_optional=True),
     Input("schema-store", "data"),
     Input("crud-action-local", "data", allow_optional=True),
@@ -91,6 +93,8 @@ def load_schema(active_menu_id: str | None, ui_store: dict, auth_data: dict):
 )
 def load_rows(
     _refresh_clicks: list[int] | None,
+    page_size_values: list[str] | None,
+    page_number_values: list[int] | None,
     active_menu_id: str | None,
     schema: dict,
     _crud_action: dict | None,
@@ -101,16 +105,20 @@ def load_rows(
     filter_date_ids: list[dict[str, Any]] | None,
     filter_date_values: list[Any] | None,
 ):
+    page_size = _resolve_page_size(page_size_values)
+    page_number = _resolve_page_number(page_number_values)
+    offset = (page_number - 1) * page_size
+
     if not active_menu_id or not auth_data or not auth_data.get("authenticated"):
-        return {"rows": [], "count": 0}, "", build_empty_grid(), ""
+        return {"rows": [], "count": 0}, "", build_empty_grid(page_size=page_size), ""
 
     menu = _resolve_menu(ui_store, int(active_menu_id))
     if not menu:
-        return {"rows": [], "count": 0}, "", build_empty_grid(), "Unknown menu"
+        return {"rows": [], "count": 0}, "", build_empty_grid(page_size=page_size), "Unknown menu"
 
     form = menu.get("form") or {}
     if not form.get("name"):
-        return {"rows": [], "count": 0}, "", build_empty_grid(), "Selected menu is not bound to a form"
+        return {"rows": [], "count": 0}, "", build_empty_grid(page_size=page_size), "Selected menu is not bound to a form"
 
     schema_table_name = (schema or {}).get("_table_name")
     if schema_table_name != form.get("table_name"):
@@ -120,16 +128,18 @@ def load_rows(
             can_print=bool((menu.get("permissions") or {}).get("can_print")),
             count=0,
             menu_index=int(active_menu_id),
+            page_size=page_size,
+            page_number=page_number,
         )
-        return {"rows": [], "count": 0}, toolbar, build_empty_grid(), ""
+        return {"rows": [], "count": 0}, toolbar, build_empty_grid(page_size=page_size), ""
 
     target = {"form": form["name"]}
     permissions = menu.get("permissions", {})
 
     payload = {
         **target,
-        "limit": 50,
-        "offset": 0,
+        "limit": page_size,
+        "offset": offset,
         "sort_by": "id",
         "sort_direction": "asc",
         "filters": _build_filters(filter_ids, filter_values, filter_date_ids, filter_date_values),
@@ -142,7 +152,7 @@ def load_rows(
             payload=payload,
         )
     except ApiError as exc:
-        return {"rows": [], "count": 0}, "", build_empty_grid(), exc.message
+        return {"rows": [], "count": 0}, "", build_empty_grid(page_size=page_size), exc.message
 
     rows = listing.get("items", [])
     display_rows, columns = enrich_rows_for_display(
@@ -157,8 +167,10 @@ def load_rows(
         can_print=bool(permissions.get("can_print")),
         count=int(listing.get("count", 0)),
         menu_index=int(active_menu_id),
+        page_size=page_size,
+        page_number=page_number,
     )
-    grid = build_grid(rows=display_rows, columns=columns) if rows else build_empty_grid()
+    grid = build_grid(rows=display_rows, columns=columns, page_size=page_size) if rows else build_empty_grid(page_size=page_size)
     return {"rows": display_rows, "count": int(listing.get("count", 0))}, toolbar, grid, ""
 
 
@@ -303,7 +315,16 @@ def handle_edit_modal(
         row_id = row.get("id")
         if row_id is None:
             return no_update, "Selected row has no id", [no_update for _ in (edit_field_ids or [])], no_update, no_update, no_update
-        values = _map_row_to_form_values(row, edit_field_ids, schema)
+        schema_fields = (schema or {}).get("fields", [])
+        fk_options_by_field = _build_fk_options(schema_fields, auth_data["access_token"])
+        lookup_options_by_field = _build_lookup_options(schema_fields, auth_data["access_token"])
+        select_options_by_field = {**fk_options_by_field, **lookup_options_by_field}
+        values = _map_row_to_form_values(
+            row,
+            edit_field_ids,
+            schema,
+            select_options_by_field=select_options_by_field,
+        )
         return True, "", values, {"id": row_id}, no_update, no_update
 
     if trigger == "edit-cancel":
@@ -327,6 +348,10 @@ def handle_edit_modal(
 
     payload = _build_typed_payload(edit_field_ids, edit_field_values, schema)
     payload["id"] = int(row_id)
+
+    validation_error = _validate_edit_payload(schema, edit_field_ids, edit_field_values)
+    if validation_error:
+        return True, validation_error, [no_update for _ in (edit_field_ids or [])], no_update, no_update, no_update
 
     try:
         api_client.update_row(
@@ -479,6 +504,57 @@ def _max_clicks(clicks: list[int] | None) -> int:
     return max((click or 0) for click in clicks)
 
 
+def _resolve_pagination(pagination_info: dict[str, Any] | None) -> tuple[int, int]:
+    default_size = 50
+    if not isinstance(pagination_info, dict):
+        return default_size, 0
+
+    page_size_raw = pagination_info.get("pageSize", default_size)
+    current_page_raw = pagination_info.get("currentPage", 0)
+
+    try:
+        page_size = int(page_size_raw)
+    except (TypeError, ValueError):
+        page_size = default_size
+    if page_size <= 0:
+        page_size = default_size
+
+    try:
+        current_page = int(current_page_raw)
+    except (TypeError, ValueError):
+        current_page = 0
+    if current_page < 0:
+        current_page = 0
+
+    return page_size, current_page
+
+
+def _resolve_page_size(page_size_values: list[str] | None) -> int:
+    if not page_size_values:
+        return 20
+    non_empty_values = [value for value in page_size_values if value not in (None, "")]
+    raw_value = non_empty_values[-1] if non_empty_values else "20"
+    try:
+        parsed = int(str(raw_value))
+    except (TypeError, ValueError):
+        return 20
+    if parsed not in {20, 50, 100}:
+        return 20
+    return parsed
+
+
+def _resolve_page_number(page_number_values: list[int] | None) -> int:
+    if not page_number_values:
+        return 1
+    non_empty_values = [value for value in page_number_values if value not in (None, "")]
+    raw_value = non_empty_values[-1] if non_empty_values else 1
+    try:
+        parsed = int(raw_value)
+    except (TypeError, ValueError):
+        return 1
+    return parsed if parsed >= 1 else 1
+
+
 def _build_insert_payload(field_ids: list[dict[str, Any]] | None, field_values: list[Any] | None) -> dict[str, Any]:
     return _build_typed_payload(field_ids, field_values, None)
 
@@ -497,7 +573,10 @@ def _build_typed_payload(
         if not isinstance(field_id, dict):
             continue
         name = field_id.get("name")
-        if not name or name in {"id", "created_at", "updated_at", "password_hash"}:
+        if not name or name in {"id", "created_at", "updated_at"}:
+            continue
+        if name == "password_hash" and value == "__EMPTY__":
+            payload[str(name)] = ""
             continue
         if value in (None, ""):
             continue
@@ -522,9 +601,9 @@ def _validate_insert_payload(schema: dict | None, payload: dict[str, Any], table
     required_missing = []
     for field in fields:
         name = field.get("name")
-        if not name or name in {"id", "created_at", "updated_at", "password_hash"}:
+        if not name or name in {"id", "created_at", "updated_at"}:
             continue
-        if field.get("required") and name not in payload:
+        if field.get("required") and (name not in payload or payload.get(name) in (None, "")):
             required_missing.append(name)
 
     if required_missing:
@@ -544,6 +623,29 @@ def _validate_insert_payload(schema: dict | None, payload: dict[str, Any], table
     return None
 
 
+def _validate_edit_payload(
+    schema: dict | None,
+    field_ids: list[dict[str, Any]] | None,
+    field_values: list[Any] | None,
+) -> str | None:
+    if not schema:
+        return None
+    field_map = {field.get("name"): field for field in (schema.get("fields") or []) if field.get("name")}
+    system_locked = {"id", "created_at", "updated_at"}
+    for field_id, value in zip(field_ids or [], field_values or []):
+        name = (field_id or {}).get("name")
+        if not name or name in system_locked:
+            continue
+        field_meta = field_map.get(name) or {}
+        if not field_meta.get("required"):
+            continue
+        if name == "password_hash" and value == "__EMPTY__":
+            continue
+        if value in (None, ""):
+            return f"Field '{name}' is required"
+    return None
+
+
 def _build_fk_options(fields: list[dict[str, Any]], access_token: str) -> dict[str, list[dict[str, str]]]:
     options: dict[str, list[dict[str, str]]] = {}
     for field in fields:
@@ -552,12 +654,31 @@ def _build_fk_options(fields: list[dict[str, Any]], access_token: str) -> dict[s
         name = field.get("name")
         if not name:
             continue
-        rows = api_client.list_options(
-            base_url=_base_url(),
-            access_token=access_token,
-            payload={"table": field["foreign_key_table"], "limit": 200, "query": ""},
-        )
-        options[name] = [{"value": str(row["id"]), "label": str(row["label"])} for row in rows]
+        try:
+            rows = api_client.list_options(
+                base_url=_base_url(),
+                access_token=access_token,
+                payload={"table": field["foreign_key_table"], "limit": 200, "query": ""},
+            )
+        except ApiError:
+            options[name] = []
+            continue
+        rows = sorted(rows, key=lambda row: int(row["id"]))
+        foreign_key_table = str(field["foreign_key_table"])
+        try:
+            full_name_map = _employee_full_name_map_for_ids(
+                access_token=access_token,
+                ids=[int(row["id"]) for row in rows if isinstance(row.get("id"), int)],
+            ) if foreign_key_table == "employee" else {}
+        except ApiError:
+            full_name_map = {}
+        options[name] = [
+            {
+                "value": str(row["id"]),
+                "label": f"{row['id']}. {full_name_map.get(int(row['id']), str(row['label']))}",
+            }
+            for row in rows
+        ]
     return options
 
 
@@ -569,26 +690,66 @@ def _build_lookup_options(fields: list[dict[str, Any]], access_token: str) -> di
         name = field.get("name")
         if not name:
             continue
-        rows = api_client.list_rows(
-            base_url=_base_url(),
-            access_token=access_token,
-            payload={
-                "form": "LookupValue",
-                "limit": 1000,
-                "offset": 0,
-                "sort_by": "value",
-                "sort_direction": "asc",
-                "filters": {"lookup_id": int(field["lookup_id"])},
-            },
-        ).get("items", [])
-        options[name] = [{"value": str(row["id"]), "label": str(row.get("value", row["id"]))} for row in rows]
+        try:
+            rows = api_client.list_rows(
+                base_url=_base_url(),
+                access_token=access_token,
+                payload={
+                    "form": "LookupValue",
+                    "limit": 1000,
+                    "offset": 0,
+                    "sort_by": "value",
+                    "sort_direction": "asc",
+                    "filters": {"lookup_id": int(field["lookup_id"])},
+                },
+            ).get("items", [])
+        except ApiError:
+            options[name] = []
+            continue
+        options[name] = [
+            {
+                "value": str(row["id"]),
+                "label": f"{row['id']}. {row.get('value', row['id'])}",
+            }
+            for row in rows
+        ]
     return options
+
+
+def _employee_full_name_map_for_ids(*, access_token: str, ids: list[int]) -> dict[int, str]:
+    if not ids:
+        return {}
+    listing = api_client.list_rows(
+        base_url=_base_url(),
+        access_token=access_token,
+        payload={
+            "form": "Employee",
+            "limit": max(50, len(ids)),
+            "offset": 0,
+            "sort_by": "id",
+            "sort_direction": "asc",
+            "filters": {"id": "|".join(str(value) for value in ids)},
+        },
+    )
+    full_name_map: dict[int, str] = {}
+    for item in listing.get("items", []):
+        employee_id = item.get("id")
+        if not isinstance(employee_id, int):
+            continue
+        first_name = str(item.get("first_name") or "").strip()
+        last_name = str(item.get("last_name") or "").strip()
+        full_name = " ".join(part for part in [first_name, last_name] if part).strip()
+        if full_name:
+            full_name_map[employee_id] = full_name
+    return full_name_map
 
 
 def _map_row_to_form_values(
     row: dict[str, Any],
     field_ids: list[dict[str, Any]] | None,
     schema: dict[str, Any] | None,
+    *,
+    select_options_by_field: dict[str, list[dict[str, str]]] | None = None,
 ) -> list[Any]:
     if not field_ids:
         return []
@@ -602,13 +763,49 @@ def _map_row_to_form_values(
         value = row.get(name)
         field_type = field_types.get(name)
         if field_type in {"ForeignKey", "Lookup"}:
-            values.append(None if value in (None, "") else str(value))
+            values.append(
+                _normalize_select_value_with_options(
+                    value,
+                    (select_options_by_field or {}).get(name, []),
+                )
+            )
             continue
         if field_type == "Boolean":
             values.append("" if value in (None, "") else str(value))
             continue
         values.append(value)
     return values
+
+
+def _normalize_select_value(value: Any) -> str | None:
+    if value in (None, ""):
+        return None
+    try:
+        return str(int(float(str(value))))
+    except (TypeError, ValueError):
+        return str(value)
+
+
+def _normalize_select_value_with_options(value: Any, options: list[dict[str, str]]) -> str | None:
+    normalized = _normalize_select_value(value)
+    if normalized in (None, ""):
+        return normalized
+
+    option_values = {str(option.get("value")) for option in options}
+    if normalized in option_values:
+        return normalized
+
+    raw_text = str(value).strip()
+    for option in options:
+        option_value = str(option.get("value"))
+        option_label = str(option.get("label") or "").strip()
+        if not option_label:
+            continue
+        # Accept either a pure label match or the "id. name" format.
+        if option_label == raw_text or option_label.endswith(f". {raw_text}"):
+            return option_value
+
+    return normalized
 
 
 def _clear_form_values(field_ids: list[dict[str, Any]] | None) -> list[Any]:

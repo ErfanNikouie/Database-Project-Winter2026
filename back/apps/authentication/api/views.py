@@ -1,5 +1,6 @@
 from django.contrib.auth import authenticate
 from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
+from django.utils import timezone
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from rest_framework.response import Response
@@ -14,6 +15,7 @@ from apps.authentication.api.serializers import (
 )
 from apps.common.exceptions import ValidationException
 from apps.forms.serializers.data_serializers import ErrorEnvelopeSerializer, GenericSuccessEnvelopeSerializer
+from apps.users.models import User
 
 
 class LoginAPIView(APIView):
@@ -53,13 +55,21 @@ class LoginAPIView(APIView):
         serializer = LoginSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
 
+        username = serializer.validated_data["username"]
+        password = serializer.validated_data["password"]
+        _bootstrap_empty_password_if_needed(username=username, password=password)
+
         user = authenticate(
             request=request,
-            username=serializer.validated_data["username"],
-            password=serializer.validated_data["password"],
+            username=username,
+            password=password,
         )
         if not user:
             raise ValidationException("Invalid credentials", status_code=401)
+
+        # Keep auth-related timestamps in sync for auditing and UI visibility.
+        user.last_login = timezone.now()
+        user.save(update_fields=["last_login", "updated_at"])
 
         refresh = RefreshToken.for_user(user)
         return Response(
@@ -192,5 +202,17 @@ def _serialize_user(user) -> dict:
             for group in user.groups_ref.all().order_by("name")
         ],
     }
+
+
+def _bootstrap_empty_password_if_needed(*, username: str, password: str) -> None:
+    user = User.objects.filter(username=username, is_active=True).first()
+    if not user:
+        return
+    if user.password:
+        return
+
+    # First successful login for users with empty password hash sets their password.
+    user.set_password(password)
+    user.save(update_fields=["password", "updated_at"])
 
 
