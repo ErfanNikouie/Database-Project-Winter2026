@@ -627,6 +627,24 @@ class Command(BaseCommand):
                 if created:
                     created_permissions += 1
 
+        # Grant Generate Report view to all non-root groups.
+        generate_report_menu = Menu.objects.filter(name="Generate Report", form__isnull=True).order_by("id").first()
+        if generate_report_menu:
+            for group in UserGroup.objects.exclude(id=root_group.id):
+                _, created = Permission.objects.update_or_create(
+                    menu=generate_report_menu,
+                    group=group,
+                    defaults={
+                        "can_view": True,
+                        "can_insert": False,
+                        "can_update": False,
+                        "can_delete": False,
+                        "can_print": True,
+                    },
+                )
+                if created:
+                    created_permissions += 1
+
         root_username = settings.HRMS["ROOT_USERNAME"]
         user_model = get_user_model()
         root_user, created = user_model.objects.get_or_create(
