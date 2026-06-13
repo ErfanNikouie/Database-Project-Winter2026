@@ -56,18 +56,21 @@ def enrich_rows_for_display(
 
         if field_type == "Lookup" and field.get("lookup_id"):
             lookup_id = int(field["lookup_id"])
-            lookup_values = api_client.list_rows(
-                base_url=base_url,
-                access_token=access_token,
-                payload={
-                    "form": "LookupValue",
-                    "limit": 1000,
-                    "offset": 0,
-                    "sort_by": "value",
-                    "sort_direction": "asc",
-                    "filters": {"lookup_id": lookup_id},
-                },
-            ).get("items", [])
+            try:
+                lookup_values = api_client.list_rows(
+                    base_url=base_url,
+                    access_token=access_token,
+                    payload={
+                        "form": "LookupValue",
+                        "limit": 1000,
+                        "offset": 0,
+                        "sort_by": "value",
+                        "sort_direction": "asc",
+                        "filters": {"lookup_id": lookup_id},
+                    },
+                ).get("items", [])
+            except ApiError:
+                lookup_values = []
             lookup_map = {int(item["id"]): str(item["value"]) for item in lookup_values if isinstance(item.get("id"), int)}
             label_column = f"{name}__label"
             label_columns_by_field[name] = label_column

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections import defaultdict
 import hashlib
 
+from django.conf import settings
 from drf_spectacular.utils import OpenApiExample, OpenApiResponse, extend_schema
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -131,7 +132,8 @@ class MenuTreeAPIView(APIView):
     @staticmethod
     def _build_permissions_map(user, menus: list[Menu]) -> dict[int, dict[str, bool]]:
         menu_ids = [menu.id for menu in menus]
-        if user.is_superuser:
+        is_root_group_member = user.groups_ref.filter(name=settings.HRMS["ROOT_GROUP_NAME"]).exists()
+        if user.is_superuser or is_root_group_member:
             return {
                 menu_id: {
                     "can_view": True,

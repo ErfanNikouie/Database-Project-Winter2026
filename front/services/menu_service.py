@@ -4,8 +4,9 @@ from services.api_client import api_client
 from services.cache_service import cache
 
 
-def fetch_menu_tree(*, base_url: str, access_token: str, etag: str | None) -> tuple[list[dict], str | None]:
-    cached = cache.get("menu_tree")
+def fetch_menu_tree(*, base_url: str, access_token: str, etag: str | None, cache_scope: str = "anon") -> tuple[list[dict], str | None]:
+    cache_key = f"menu_tree:{cache_scope}"
+    cached = cache.get(cache_key)
     if cached and etag and cached.get("etag") == etag:
         return cached["items"], etag
 
@@ -18,6 +19,6 @@ def fetch_menu_tree(*, base_url: str, access_token: str, etag: str | None) -> tu
         if items is None:
             return [], etag
 
-    cache.set("menu_tree", {"items": items, "etag": next_etag}, ttl_seconds=300)
+    cache.set(cache_key, {"items": items, "etag": next_etag}, ttl_seconds=300)
     return items, next_etag
 

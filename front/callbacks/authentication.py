@@ -4,6 +4,7 @@ from dash import Input, Output, State, callback, no_update
 
 from services.api_client import api_client
 from services.auth_service import build_auth_payload, empty_auth_payload
+from services.cache_service import cache
 from services.session import default_ui_store
 from utils.models import ApiError
 
@@ -26,6 +27,7 @@ def handle_login(n_clicks: int | None, username: str | None, password: str | Non
     try:
         data = api_client.login(base_url=_base_url(), username=username, password=password)
         user = api_client.get_current_user(base_url=_base_url(), access_token=data["access"])
+        cache.clear()
         return build_auth_payload(access_token=data["access"], refresh_token=data["refresh"], user=user), "", "/"
     except ApiError as exc:
         return empty_auth_payload(), exc.message, no_update
@@ -49,6 +51,7 @@ def handle_logout(n_clicks: int | None, auth_data: dict):
             api_client.logout(base_url=_base_url(), access_token=access, refresh_token=refresh)
     except ApiError:
         pass
+    cache.clear()
     return empty_auth_payload(), default_ui_store(), "/login"
 
 

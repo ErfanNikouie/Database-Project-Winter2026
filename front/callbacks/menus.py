@@ -22,6 +22,14 @@ def load_menus(auth_data: dict, pathname: str, crud_event: dict | None, ui_store
         return ui_store, []
 
     ui = dict(ui_store or {})
+    auth_user = (auth_data or {}).get("user") or {}
+    auth_user_id = auth_user.get("id")
+    if ui.get("auth_user_id") != auth_user_id:
+        ui["menu_tree"] = []
+        ui["menu_tree_etag"] = None
+        ui["expanded_menu_folders"] = []
+        ui["selected_menu_id"] = None
+    ui["auth_user_id"] = auth_user_id
     selected_menu_id = _extract_menu_id(pathname)
     if selected_menu_id is not None:
         ui["selected_menu_id"] = selected_menu_id
@@ -50,6 +58,7 @@ def load_menus(auth_data: dict, pathname: str, crud_event: dict | None, ui_store
             base_url=_base_url(),
             access_token=auth_data["access_token"],
             etag=etag,
+            cache_scope=str(auth_user_id or "anon"),
         )
         ui["menu_tree"] = items
         ui["menu_tree_etag"] = next_etag
