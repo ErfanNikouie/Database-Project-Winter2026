@@ -72,12 +72,21 @@ def enrich_rows_for_display(
             except ApiError:
                 lookup_values = []
             lookup_map = {int(item["id"]): str(item["value"]) for item in lookup_values if isinstance(item.get("id"), int)}
+            lookup_value_to_id = {value: key for key, value in lookup_map.items()}
             label_column = f"{name}__label"
             label_columns_by_field[name] = label_column
             for row in display_rows:
                 value = row.get(name)
                 if isinstance(value, int):
                     row[label_column] = lookup_map.get(value, "")
+                elif isinstance(value, str):
+                    text_value = value.strip()
+                    resolved_id = lookup_value_to_id.get(text_value)
+                    if resolved_id is not None:
+                        row[name] = resolved_id
+                        row[label_column] = lookup_map.get(resolved_id, text_value)
+                    else:
+                        row[label_column] = text_value
                 else:
                     row[label_column] = ""
 
