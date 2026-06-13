@@ -242,12 +242,12 @@ def _build_filter_controls(
             )
             continue
 
-        if field_type == "ForeignKey":
+        if field_type == "ForeignKey" or field.get("foreign_key_table"):
             controls.append(
                 dmc.Select(
                     id={"type": "report-filter-field", "key": key},
                     label=f"{label} ({field_type})",
-                    data=fk_options_by_key.get(key, []),
+                    data=_sort_options_by_id(fk_options_by_key.get(key, [])),
                     value=None,
                     searchable=True,
                     clearable=True,
@@ -260,7 +260,7 @@ def _build_filter_controls(
                 dmc.Select(
                     id={"type": "report-filter-field", "key": key},
                     label=f"{label} ({field_type})",
-                    data=lookup_options_by_key.get(key, []),
+                    data=_sort_options_by_id(lookup_options_by_key.get(key, [])),
                     value=None,
                     searchable=True,
                     clearable=True,
@@ -404,7 +404,7 @@ def _build_fk_filter_options(*, fields: list[dict[str, Any]], access_token: str)
     for field in fields:
         key = field.get("key")
         foreign_key_table = field.get("foreign_key_table")
-        if not key or field.get("type") != "ForeignKey" or not foreign_key_table:
+        if not key or not foreign_key_table:
             continue
         try:
             rows = api_client.list_options(
@@ -415,11 +415,11 @@ def _build_fk_filter_options(*, fields: list[dict[str, Any]], access_token: str)
         except ApiError:
             options[str(key)] = []
             continue
-        rows = sorted(rows, key=lambda row: int(row["id"]))
-        options[str(key)] = [
+        option_rows = [
             {"value": str(row["id"]), "label": f"{row['id']}. {row['label']}"}
             for row in rows
         ]
+        options[str(key)] = _sort_options_by_id(option_rows)
     return options
 
 
@@ -446,11 +446,23 @@ def _build_lookup_filter_options(*, fields: list[dict[str, Any]], access_token: 
         except ApiError:
             options[str(key)] = []
             continue
-        options[str(key)] = [
+        option_rows = [
             {"value": str(row["id"]), "label": f"{row['id']}. {row.get('value', row['id'])}"}
             for row in rows
         ]
+        options[str(key)] = _sort_options_by_id(option_rows)
     return options
+
+
+def _sort_options_by_id(options: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    def key_fn(option: dict[str, Any]) -> tuple[int, int | str]:
+        raw_value = option.get("value")
+        try:
+            return (0, int(float(str(raw_value))))
+        except (TypeError, ValueError):
+            return (1, str(raw_value or ""))
+
+    return sorted(options, key=key_fn)
 
 
 def _column_header(column_key: str, columns_meta: list[dict[str, Any]]) -> str:

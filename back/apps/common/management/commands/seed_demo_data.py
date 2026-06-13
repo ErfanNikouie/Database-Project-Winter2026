@@ -16,6 +16,7 @@ from apps.forms.models import Form, FormField, FormFieldType
 from apps.forms.services.schema_service import SchemaService
 from apps.lookups.models import Lookup, LookupValue
 from apps.menus.models import Menu, Permission
+from apps.reports.models import Report, ReportAggregationType, ReportExpressionType, ReportField
 from apps.users.models import UserGroup
 
 
@@ -170,6 +171,9 @@ LOOKUP_DEFINITIONS: dict[str, list[str]] = {
     "Contract": ["Part-time", "Full-time", "Out-source"],
     "EmploymentStatus": ["Active", "Promoted", "Demoted", "Fired"],
     "Relation": ["Spouse", "Child"],
+    "ReportExpressionType": ["Direct", "Aggregate", "Latest", "Exists", "GroupedAggregate"],
+    "ReportAggregationType": ["None", "Count", "Sum", "Avg", "Min", "Max"],
+    "ReportSortDirection": ["asc", "desc"],
 }
 
 HR_MENU_TREE = {
@@ -225,6 +229,7 @@ class Command(BaseCommand):
             "forms": {},
             "lookups": {},
             "permissions": {},
+            "reports": {},
             "records": {},
         }
 
@@ -236,6 +241,7 @@ class Command(BaseCommand):
             menu_map = self._ensure_menu_hierarchy(form_map, summary)
             self._ensure_demo_groups_and_users(summary)
             self._ensure_permissions_and_security(menu_map, summary)
+            self._ensure_demo_reports(form_map=form_map, summary=summary)
 
         # Dynamic data should be outside the atomic block because SQLAlchemy DML and Django ORM
         # share the same DB but not the same transaction manager lifecycle.
@@ -689,6 +695,403 @@ class Command(BaseCommand):
                     table = Table(table_name, metadata, autoload_with=engine)
                     connection.execute(delete(table))
 
+    def _ensure_demo_reports(self, *, form_map: dict[str, Form], summary: dict[str, dict[str, int]]) -> None:
+        self.stdout.write("Ensuring metadata-driven analytical demo reports ...")
+
+        def field(table_name: str, field_name: str) -> FormField:
+            form = form_map.get(table_name)
+            if not form:
+                raise CommandError(f"Missing form for table '{table_name}' while seeding reports.")
+            form_field = FormField.objects.filter(form=form, name=field_name).first()
+            if not form_field:
+                raise CommandError(f"Missing field '{table_name}.{field_name}' while seeding reports.")
+            return form_field
+
+        organization_form = form_map["organization_unit"]
+        employee_form = form_map["employee"]
+        dependent_form = form_map["dependent"]
+        contract_form = form_map["contract"]
+        hokm_form = form_map["hokm"]
+        internal_exp_form = form_map["internal_experience"]
+        external_exp_form = form_map["external_experience"]
+
+        report_specs = [
+            {
+                "name": "EmployeeOverview",
+                "description": "Analytical employee overview with counts and latest-state indicators.",
+                "base_form": employee_form,
+                "fields": [
+                    {
+                        "display_order": 1,
+                        "display_name": "EmployeeId",
+                        "expression_type": ReportExpressionType.DIRECT,
+                        "form": employee_form,
+                        "form_field": None,
+                    },
+                    {
+                        "display_order": 2,
+                        "display_name": "FirstName",
+                        "expression_type": ReportExpressionType.DIRECT,
+                        "form": employee_form,
+                        "form_field": field("employee", "first_name"),
+                    },
+                    {
+                        "display_order": 3,
+                        "display_name": "LastName",
+                        "expression_type": ReportExpressionType.DIRECT,
+                        "form": employee_form,
+                        "form_field": field("employee", "last_name"),
+                    },
+                    {
+                        "display_order": 4,
+                        "display_name": "DependentCount",
+                        "expression_type": ReportExpressionType.AGGREGATE,
+                        "aggregation_type": ReportAggregationType.COUNT,
+                        "related_form": dependent_form,
+                    },
+                    {
+                        "display_order": 5,
+                        "display_name": "ContractCount",
+                        "expression_type": ReportExpressionType.AGGREGATE,
+                        "aggregation_type": ReportAggregationType.COUNT,
+                        "related_form": contract_form,
+                    },
+                    {
+                        "display_order": 6,
+                        "display_name": "HokmCount",
+                        "expression_type": ReportExpressionType.AGGREGATE,
+                        "aggregation_type": ReportAggregationType.COUNT,
+                        "related_form": hokm_form,
+                    },
+                    {
+                        "display_order": 7,
+                        "display_name": "LatestContractType",
+                        "expression_type": ReportExpressionType.LATEST,
+                        "related_form": contract_form,
+                        "target_field": field("contract", "contract_type"),
+                        "sort_field": field("contract", "from_date"),
+                        "sort_direction": "desc",
+                    },
+                    {
+                        "display_order": 8,
+                        "display_name": "LatestContractExpirationDate",
+                        "expression_type": ReportExpressionType.LATEST,
+                        "related_form": contract_form,
+                        "target_field": field("contract", "to_date"),
+                        "sort_field": field("contract", "from_date"),
+                        "sort_direction": "desc",
+                    },
+                    {
+                        "display_order": 9,
+                        "display_name": "LatestInternalExperienceStatus",
+                        "expression_type": ReportExpressionType.LATEST,
+                        "related_form": internal_exp_form,
+                        "target_field": field("internal_experience", "employment_status"),
+                        "sort_field": field("internal_experience", "from_date"),
+                        "sort_direction": "desc",
+                    },
+                    {
+                        "display_order": 10,
+                        "display_name": "LatestInternalExperienceEducationDegree",
+                        "expression_type": ReportExpressionType.LATEST,
+                        "related_form": internal_exp_form,
+                        "target_field": field("internal_experience", "education_degree"),
+                        "sort_field": field("internal_experience", "from_date"),
+                        "sort_direction": "desc",
+                    },
+                    {
+                        "display_order": 11,
+                        "display_name": "LatestInternalExperienceDate",
+                        "expression_type": ReportExpressionType.LATEST,
+                        "related_form": internal_exp_form,
+                        "target_field": field("internal_experience", "from_date"),
+                        "sort_field": field("internal_experience", "from_date"),
+                        "sort_direction": "desc",
+                    },
+                ],
+            },
+            {
+                "name": "EmployeeChildren",
+                "description": "Employee to dependent traversal report.",
+                "base_form": employee_form,
+                "fields": [
+                    {
+                        "display_order": 1,
+                        "display_name": "EmployeeId",
+                        "expression_type": ReportExpressionType.DIRECT,
+                        "form": employee_form,
+                        "form_field": None,
+                    },
+                    {
+                        "display_order": 2,
+                        "display_name": "FirstName",
+                        "expression_type": ReportExpressionType.DIRECT,
+                        "form": employee_form,
+                        "form_field": field("employee", "first_name"),
+                    },
+                    {
+                        "display_order": 3,
+                        "display_name": "LastName",
+                        "expression_type": ReportExpressionType.DIRECT,
+                        "form": employee_form,
+                        "form_field": field("employee", "last_name"),
+                    },
+                    {
+                        "display_order": 4,
+                        "display_name": "ChildFirstName",
+                        "expression_type": ReportExpressionType.DIRECT,
+                        "form": dependent_form,
+                        "form_field": field("dependent", "first_name"),
+                    },
+                    {
+                        "display_order": 5,
+                        "display_name": "ChildLastName",
+                        "expression_type": ReportExpressionType.DIRECT,
+                        "form": dependent_form,
+                        "form_field": field("dependent", "last_name"),
+                    },
+                    {
+                        "display_order": 6,
+                        "display_name": "DependentNationalCode",
+                        "expression_type": ReportExpressionType.DIRECT,
+                        "form": dependent_form,
+                        "form_field": field("dependent", "national_code"),
+                    },
+                ],
+            },
+            {
+                "name": "ExpiringContracts",
+                "description": "Employees with latest contract expiration and type.",
+                "base_form": employee_form,
+                "fields": [
+                    {
+                        "display_order": 1,
+                        "display_name": "EmployeeId",
+                        "expression_type": ReportExpressionType.DIRECT,
+                        "form": employee_form,
+                        "form_field": None,
+                    },
+                    {
+                        "display_order": 2,
+                        "display_name": "FirstName",
+                        "expression_type": ReportExpressionType.DIRECT,
+                        "form": employee_form,
+                        "form_field": field("employee", "first_name"),
+                    },
+                    {
+                        "display_order": 3,
+                        "display_name": "LastName",
+                        "expression_type": ReportExpressionType.DIRECT,
+                        "form": employee_form,
+                        "form_field": field("employee", "last_name"),
+                    },
+                    {
+                        "display_order": 4,
+                        "display_name": "ContractType",
+                        "expression_type": ReportExpressionType.LATEST,
+                        "related_form": contract_form,
+                        "target_field": field("contract", "contract_type"),
+                        "sort_field": field("contract", "from_date"),
+                        "sort_direction": "desc",
+                    },
+                    {
+                        "display_order": 5,
+                        "display_name": "ContractExpirationDate",
+                        "expression_type": ReportExpressionType.LATEST,
+                        "related_form": contract_form,
+                        "target_field": field("contract", "to_date"),
+                        "sort_field": field("contract", "from_date"),
+                        "sort_direction": "desc",
+                        "filter_expression": ">=TODAY&<=TODAY+90",
+                    },
+                ],
+            },
+            {
+                "name": "OrganizationEmployeeHeadcount",
+                "description": "Grouped aggregate report of employees per organization unit.",
+                "base_form": organization_form,
+                "fields": [
+                    {
+                        "display_order": 1,
+                        "display_name": "OrganizationId",
+                        "expression_type": ReportExpressionType.DIRECT,
+                        "form": organization_form,
+                        "form_field": None,
+                        "group_by_flag": True,
+                    },
+                    {
+                        "display_order": 2,
+                        "display_name": "OrganizationName",
+                        "expression_type": ReportExpressionType.DIRECT,
+                        "form": organization_form,
+                        "form_field": field("organization_unit", "name"),
+                        "group_by_flag": True,
+                    },
+                    {
+                        "display_order": 3,
+                        "display_name": "EmployeeCount",
+                        "expression_type": ReportExpressionType.GROUPED_AGGREGATE,
+                        "aggregation_type": ReportAggregationType.COUNT,
+                        "related_form": employee_form,
+                    },
+                ],
+            },
+            {
+                "name": "EmployeeFlags",
+                "description": "Boolean existence flags for employee-related entities.",
+                "base_form": employee_form,
+                "fields": [
+                    {
+                        "display_order": 1,
+                        "display_name": "EmployeeId",
+                        "expression_type": ReportExpressionType.DIRECT,
+                        "form": employee_form,
+                        "form_field": None,
+                    },
+                    {
+                        "display_order": 2,
+                        "display_name": "FirstName",
+                        "expression_type": ReportExpressionType.DIRECT,
+                        "form": employee_form,
+                        "form_field": field("employee", "first_name"),
+                    },
+                    {
+                        "display_order": 3,
+                        "display_name": "LastName",
+                        "expression_type": ReportExpressionType.DIRECT,
+                        "form": employee_form,
+                        "form_field": field("employee", "last_name"),
+                    },
+                    {
+                        "display_order": 4,
+                        "display_name": "HasDependents",
+                        "expression_type": ReportExpressionType.EXISTS,
+                        "related_form": dependent_form,
+                    },
+                    {
+                        "display_order": 5,
+                        "display_name": "HasContractRecords",
+                        "expression_type": ReportExpressionType.EXISTS,
+                        "related_form": contract_form,
+                    },
+                    {
+                        "display_order": 6,
+                        "display_name": "HasInternalExperience",
+                        "expression_type": ReportExpressionType.EXISTS,
+                        "related_form": internal_exp_form,
+                    },
+                ],
+            },
+            {
+                "name": "EmployeeExperienceMetrics",
+                "description": "Cross-table experience metrics with latest external role info.",
+                "base_form": employee_form,
+                "fields": [
+                    {
+                        "display_order": 1,
+                        "display_name": "EmployeeId",
+                        "expression_type": ReportExpressionType.DIRECT,
+                        "form": employee_form,
+                        "form_field": None,
+                    },
+                    {
+                        "display_order": 2,
+                        "display_name": "FirstName",
+                        "expression_type": ReportExpressionType.DIRECT,
+                        "form": employee_form,
+                        "form_field": field("employee", "first_name"),
+                    },
+                    {
+                        "display_order": 3,
+                        "display_name": "LastName",
+                        "expression_type": ReportExpressionType.DIRECT,
+                        "form": employee_form,
+                        "form_field": field("employee", "last_name"),
+                    },
+                    {
+                        "display_order": 4,
+                        "display_name": "InternalExperienceCount",
+                        "expression_type": ReportExpressionType.AGGREGATE,
+                        "aggregation_type": ReportAggregationType.COUNT,
+                        "related_form": internal_exp_form,
+                    },
+                    {
+                        "display_order": 5,
+                        "display_name": "ExternalExperienceCount",
+                        "expression_type": ReportExpressionType.AGGREGATE,
+                        "aggregation_type": ReportAggregationType.COUNT,
+                        "related_form": external_exp_form,
+                    },
+                    {
+                        "display_order": 6,
+                        "display_name": "LatestExternalJobTitle",
+                        "expression_type": ReportExpressionType.LATEST,
+                        "related_form": external_exp_form,
+                        "target_field": field("external_experience", "job_title"),
+                        "sort_field": field("external_experience", "from_date"),
+                        "sort_direction": "desc",
+                    },
+                    {
+                        "display_order": 7,
+                        "display_name": "LatestExternalToDate",
+                        "expression_type": ReportExpressionType.LATEST,
+                        "related_form": external_exp_form,
+                        "target_field": field("external_experience", "to_date"),
+                        "sort_field": field("external_experience", "from_date"),
+                        "sort_direction": "desc",
+                    },
+                ],
+            },
+        ]
+
+        created_reports = 0
+        created_fields = 0
+
+        for spec in report_specs:
+            report, was_created = Report.objects.update_or_create(
+                name=spec["name"],
+                defaults={
+                    "description": spec["description"],
+                    "base_form": spec["base_form"],
+                },
+            )
+            if was_created:
+                created_reports += 1
+
+            preserved_ids: list[int] = []
+            for row in spec["fields"]:
+                defaults = {
+                    "form": row.get("form") or row.get("related_form") or spec["base_form"],
+                    "display_order": row["display_order"],
+                    "display_name": row["display_name"],
+                    "expression_type": row["expression_type"],
+                    "aggregation_type": row.get("aggregation_type", ReportAggregationType.NONE),
+                    "target_field": row.get("target_field"),
+                    "related_form": row.get("related_form") or row.get("form") or spec["base_form"],
+                    "sort_field": row.get("sort_field"),
+                    "sort_direction": row.get("sort_direction", "desc"),
+                    "filter_expression": row.get("filter_expression", ""),
+                    "group_by_flag": bool(row.get("group_by_flag", False)),
+                }
+                report_field, field_created = ReportField.objects.update_or_create(
+                    report=report,
+                    display_order=row["display_order"],
+                    defaults={
+                        **defaults,
+                        "form_field": row.get("form_field"),
+                    },
+                )
+                preserved_ids.append(int(report_field.id))
+                if field_created:
+                    created_fields += 1
+
+            ReportField.objects.filter(report=report).exclude(id__in=preserved_ids).delete()
+
+        summary["reports"]["reports_created"] = created_reports
+        summary["reports"]["report_fields_created"] = created_fields
+        summary["reports"]["reports_total"] = Report.objects.count()
+        summary["reports"]["report_fields_total"] = ReportField.objects.count()
+
     def _seed_business_data(
         self,
         form_map: dict[str, Form],
@@ -1084,6 +1487,13 @@ class Command(BaseCommand):
         self.stdout.write(f"  Users created this run: {summary['permissions'].get('users_created', 0)}")
         self.stdout.write(f"  Root user id: {summary['permissions'].get('root_user', 'N/A')}")
         self.stdout.write(f"  Root group id: {summary['permissions'].get('root_group', 'N/A')}")
+        self.stdout.write("")
+
+        self.stdout.write("Reports:")
+        self.stdout.write(f"  Reports created this run: {summary['reports'].get('reports_created', 0)}")
+        self.stdout.write(f"  Report fields created this run: {summary['reports'].get('report_fields_created', 0)}")
+        self.stdout.write(f"  Reports total: {summary['reports'].get('reports_total', 0)}")
+        self.stdout.write(f"  Report fields total: {summary['reports'].get('report_fields_total', 0)}")
         self.stdout.write("")
 
         self.stdout.write("Generated records:")

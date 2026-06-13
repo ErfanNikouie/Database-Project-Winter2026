@@ -124,10 +124,18 @@ SYSTEM_FORM_DEFINITIONS = [
         "table_name": "report_field",
         "fields": [
             ("report_id", FormFieldType.FOREIGN_KEY, True),
-            ("form_id", FormFieldType.FOREIGN_KEY, True),
-            ("form_field_id", FormFieldType.FOREIGN_KEY, True),
+            ("form_id", FormFieldType.FOREIGN_KEY, False),
+            ("form_field_id", FormFieldType.FOREIGN_KEY, False),
             ("display_order", FormFieldType.INTEGER, True),
             ("display_name", FormFieldType.STRING, False),
+            ("expression_type", FormFieldType.LOOKUP, True),
+            ("aggregation_type", FormFieldType.LOOKUP, True),
+            ("target_field_id", FormFieldType.FOREIGN_KEY, False),
+            ("related_form_id", FormFieldType.FOREIGN_KEY, False),
+            ("sort_field_id", FormFieldType.FOREIGN_KEY, False),
+            ("sort_direction", FormFieldType.LOOKUP, True),
+            ("filter_expression", FormFieldType.TEXT, False),
+            ("group_by_flag", FormFieldType.BOOLEAN, True),
         ],
     },
 ]
@@ -146,6 +154,9 @@ SYSTEM_FIELD_OPTIONS = {
     ("report_field", "report_id"): {"foreign_key_table": "report", "foreign_key_field": "id"},
     ("report_field", "form_id"): {"foreign_key_table": "form", "foreign_key_field": "id"},
     ("report_field", "form_field_id"): {"foreign_key_table": "form_field", "foreign_key_field": "id"},
+    ("report_field", "target_field_id"): {"foreign_key_table": "form_field", "foreign_key_field": "id"},
+    ("report_field", "related_form_id"): {"foreign_key_table": "form", "foreign_key_field": "id"},
+    ("report_field", "sort_field_id"): {"foreign_key_table": "form_field", "foreign_key_field": "id"},
 }
 
 
@@ -230,9 +241,33 @@ class BootstrapService:
         for value in [choice.value for choice in FormFieldType]:
             LookupValue.objects.get_or_create(lookup=field_type_lookup, value=value)
 
+        report_expression_lookup, _ = Lookup.objects.get_or_create(
+            name="ReportExpressionType",
+            defaults={"description": "Supported report expression kinds"},
+        )
+        for value in ["Direct", "Aggregate", "Latest", "Exists", "GroupedAggregate"]:
+            LookupValue.objects.get_or_create(lookup=report_expression_lookup, value=value)
+
+        report_aggregation_lookup, _ = Lookup.objects.get_or_create(
+            name="ReportAggregationType",
+            defaults={"description": "Supported report aggregation kinds"},
+        )
+        for value in ["None", "Count", "Sum", "Avg", "Min", "Max"]:
+            LookupValue.objects.get_or_create(lookup=report_aggregation_lookup, value=value)
+
+        report_sort_direction_lookup, _ = Lookup.objects.get_or_create(
+            name="ReportSortDirection",
+            defaults={"description": "Supported report sort directions"},
+        )
+        for value in ["asc", "desc"]:
+            LookupValue.objects.get_or_create(lookup=report_sort_direction_lookup, value=value)
+
         return {
             "BooleanChoice": boolean_lookup,
             "FieldType": field_type_lookup,
+            "ReportExpressionType": report_expression_lookup,
+            "ReportAggregationType": report_aggregation_lookup,
+            "ReportSortDirection": report_sort_direction_lookup,
         }
 
     @staticmethod
@@ -241,6 +276,15 @@ class BootstrapService:
         field_type_lookup = lookup_by_name.get("FieldType")
         if field_type_lookup:
             options[("form_field", "type")] = {"lookup_id": int(field_type_lookup.id)}
+        report_expression_lookup = lookup_by_name.get("ReportExpressionType")
+        if report_expression_lookup:
+            options[("report_field", "expression_type")] = {"lookup_id": int(report_expression_lookup.id)}
+        report_aggregation_lookup = lookup_by_name.get("ReportAggregationType")
+        if report_aggregation_lookup:
+            options[("report_field", "aggregation_type")] = {"lookup_id": int(report_aggregation_lookup.id)}
+        report_sort_direction_lookup = lookup_by_name.get("ReportSortDirection")
+        if report_sort_direction_lookup:
+            options[("report_field", "sort_direction")] = {"lookup_id": int(report_sort_direction_lookup.id)}
         return options
 
     @classmethod
@@ -335,6 +379,14 @@ class BootstrapService:
                     "form": form,
                     "display_order": display_order,
                     "display_name": display_name,
+                    "expression_type": "Direct",
+                    "aggregation_type": "None",
+                    "target_field": form_field,
+                    "related_form": form,
+                    "sort_field": form_field,
+                    "sort_direction": "desc",
+                    "filter_expression": "",
+                    "group_by_flag": False,
                 },
             )
 

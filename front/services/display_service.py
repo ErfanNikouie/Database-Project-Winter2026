@@ -89,9 +89,10 @@ def enrich_rows_for_display(
             base_columns.append(label_column)
 
     # Keep any server-provided columns that are not in schema ordering.
-    for col in display_rows[0].keys():
-        if col not in base_columns:
-            base_columns.append(col)
+    extra_columns = [col for col in display_rows[0].keys() if col not in base_columns]
+    id_like_extras = [col for col in extra_columns if col in {"id", "base_id"}]
+    non_id_extras = [col for col in extra_columns if col not in {"id", "base_id"}]
+    base_columns = [*id_like_extras, *base_columns, *non_id_extras]
 
     return display_rows, base_columns
 
@@ -99,20 +100,25 @@ def enrich_rows_for_display(
 def _ordered_schema_fields(fields: list[dict[str, Any]]) -> list[str]:
     scalar_fields: list[str] = []
     relational_fields: list[str] = []
+    id_fields: list[str] = []
 
     for field in fields:
         name = field.get("name")
         if not name:
             continue
-        if name == "id":
+        name = str(name)
+        if name in {"id", "base_id"}:
+            id_fields.append(name)
             continue
 
         if field.get("type") in {"ForeignKey", "Lookup"}:
-            relational_fields.append(str(name))
+            relational_fields.append(name)
         else:
-            scalar_fields.append(str(name))
+            scalar_fields.append(name)
 
-    ordered: list[str] = ["id"]
+    ordered: list[str] = []
+    # Keep id-like columns visible first for consistency with form/crud pages.
+    ordered.extend(id_fields)
     ordered.extend(scalar_fields)
     ordered.extend(relational_fields)
     return ordered

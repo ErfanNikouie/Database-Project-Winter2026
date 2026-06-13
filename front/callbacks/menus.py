@@ -30,7 +30,7 @@ def load_menus(auth_data: dict, pathname: str, crud_event: dict | None, ui_store
         ui["expanded_menu_folders"] = []
         ui["selected_menu_id"] = None
     ui["auth_user_id"] = auth_user_id
-    selected_menu_id = _extract_menu_id(pathname)
+    selected_menu_id = _resolve_selected_menu_id(pathname=pathname, menu_tree=ui.get("menu_tree") or [])
     if selected_menu_id is not None:
         ui["selected_menu_id"] = selected_menu_id
     else:
@@ -62,6 +62,8 @@ def load_menus(auth_data: dict, pathname: str, crud_event: dict | None, ui_store
         )
         ui["menu_tree"] = items
         ui["menu_tree_etag"] = next_etag
+        selected_menu_id = _resolve_selected_menu_id(pathname=pathname, menu_tree=items)
+        ui["selected_menu_id"] = selected_menu_id
         if selected_menu_id is not None:
             expanded_folder_ids = sorted(set(expanded_folder_ids) | _ancestor_folder_ids(items, selected_menu_id))
             ui["expanded_menu_folders"] = expanded_folder_ids
@@ -99,6 +101,27 @@ def _extract_menu_id(pathname: str | None) -> int | None:
         return int(pathname.rsplit("/", maxsplit=1)[-1])
     except ValueError:
         return None
+
+
+def _resolve_selected_menu_id(*, pathname: str | None, menu_tree: list[dict]) -> int | None:
+    menu_id = _extract_menu_id(pathname)
+    if menu_id is not None:
+        return menu_id
+    if not pathname:
+        return None
+    return _find_menu_id_by_route(menu_tree, pathname)
+
+
+def _find_menu_id_by_route(nodes: list[dict], pathname: str) -> int | None:
+    for node in nodes or []:
+        route = node.get("route")
+        if route and route == pathname and node.get("id") is not None:
+            return int(node["id"])
+        children = node.get("children") or []
+        found = _find_menu_id_by_route(children, pathname)
+        if found is not None:
+            return found
+    return None
 
 
 def _base_url() -> str:
