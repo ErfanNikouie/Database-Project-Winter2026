@@ -105,6 +105,19 @@ python manage.py migrate
 python manage.py runserver
 ```
 
+## Demo Data Seed
+
+Use the management command below to generate full HR demo metadata and records:
+
+```bash
+python manage.py seed_demo_data
+```
+
+Options:
+
+- `--seed <int>`: deterministic random seed (default: `1405`)
+- `--reset-demo-data`: clear generated business rows in demo dynamic tables before reseeding
+
 ## Swagger Configuration
 
 - `ENABLE_SWAGGER=True|False` controls whether schema/docs routes are exposed.
