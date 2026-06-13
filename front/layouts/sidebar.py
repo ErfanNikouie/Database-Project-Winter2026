@@ -29,6 +29,7 @@ def build_sidebar(
 def _build_menu_node(node: dict[str, Any], selected_menu_id: int | None, expanded_folder_ids: set[int]):
     children = node.get("children") or []
     form = node.get("form")
+    route = node.get("route")
 
     if children:
         return dmc.Accordion(
@@ -50,10 +51,10 @@ def _build_menu_node(node: dict[str, Any], selected_menu_id: int | None, expande
             className="menu-folder",
         )
 
-    if not form:
+    if not form and not route:
         return dmc.Text(node["name"], c="dimmed")
 
-    href = f"/menu/{node['id']}"
+    href = route or f"/menu/{node['id']}"
     is_active = selected_menu_id == node["id"]
     return html.Div(
         dcc.Link(

@@ -6,6 +6,7 @@ from api.auth import get_current_user, login, logout, refresh_access_token, upda
 from api.crud import delete_row, detail_row, insert_row, list_options, list_rows, update_row
 from api.forms import get_form_schema
 from api.menus import get_menu_tree
+from api.reports import get_available_reports, run_report
 from api.system import get_metadata_version
 
 
@@ -51,6 +52,12 @@ class APIClient:
 
     def list_options(self, *, base_url: str, access_token: str, payload: dict[str, Any]) -> list[dict[str, Any]]:
         return list_options(base_url=base_url, access_token=access_token, payload=payload)
+
+    def get_available_reports(self, *, base_url: str, access_token: str) -> list[dict[str, Any]]:
+        return get_available_reports(base_url=base_url, access_token=access_token)
+
+    def run_report(self, *, base_url: str, access_token: str, payload: dict[str, Any]) -> dict[str, Any]:
+        return run_report(base_url=base_url, access_token=access_token, payload=payload)
 
 
 api_client = APIClient()

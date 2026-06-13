@@ -13,6 +13,7 @@ urlpatterns = [
     path('api/menus/', include('apps.menus.api.urls')),
     path('api/data/', include('apps.forms.api.urls')),
     path('api/forms/', include('apps.forms.api.form_urls')),
+    path('api/reports/', include('apps.reports.api.urls')),
 ]
 
 if settings.ENABLE_SWAGGER:

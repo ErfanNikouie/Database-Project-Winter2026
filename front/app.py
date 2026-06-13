@@ -27,6 +27,7 @@ import callbacks.filters  # noqa: E402,F401
 import callbacks.menus  # noqa: E402,F401
 import callbacks.navigation  # noqa: E402,F401
 import callbacks.profile  # noqa: E402,F401
+import callbacks.reports  # noqa: E402,F401
 
 
 if __name__ == "__main__":

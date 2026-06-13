@@ -107,6 +107,7 @@ class MenuTreeAPIView(APIView):
                 "name": menu.name,
                 "parent_menu_id": menu.parent_menu_id,
                 "sort_order": menu.sort_order,
+                "route": self._resolve_menu_route(menu),
                 "form": (
                     {
                         "id": menu.form_id,
@@ -128,6 +129,15 @@ class MenuTreeAPIView(APIView):
                 roots.append(node)
 
         return Response({"success": True, "data": {"items": roots}}, headers={"ETag": etag})
+
+    @staticmethod
+    def _resolve_menu_route(menu: Menu) -> str | None:
+        if menu.form_id:
+            return None
+        static_routes = {
+            "Generate Report": "/reports/generate",
+        }
+        return static_routes.get(menu.name)
 
     @staticmethod
     def _build_permissions_map(user, menus: list[Menu]) -> dict[int, dict[str, bool]]:

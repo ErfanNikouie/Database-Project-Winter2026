@@ -3,10 +3,13 @@ from __future__ import annotations
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.db import transaction
+from sqlalchemy import inspect
 
+from apps.common.db.sqlalchemy import get_engine
 from apps.forms.models import Form, FormField, FormFieldType
 from apps.lookups.models import Lookup, LookupValue
 from apps.menus.models import Menu, Permission
+from apps.reports.models import Report, ReportField
 from apps.users.models import UserGroup
 
 
@@ -107,6 +110,26 @@ SYSTEM_FORM_DEFINITIONS = [
             ("value", FormFieldType.STRING, True),
         ],
     },
+    {
+        "name": "Report",
+        "table_name": "report",
+        "fields": [
+            ("name", FormFieldType.STRING, True),
+            ("description", FormFieldType.TEXT, False),
+            ("base_form_id", FormFieldType.FOREIGN_KEY, True),
+        ],
+    },
+    {
+        "name": "ReportField",
+        "table_name": "report_field",
+        "fields": [
+            ("report_id", FormFieldType.FOREIGN_KEY, True),
+            ("form_id", FormFieldType.FOREIGN_KEY, True),
+            ("form_field_id", FormFieldType.FOREIGN_KEY, True),
+            ("display_order", FormFieldType.INTEGER, True),
+            ("display_name", FormFieldType.STRING, False),
+        ],
+    },
 ]
 
 SYSTEM_FIELD_OPTIONS = {
@@ -119,6 +142,10 @@ SYSTEM_FIELD_OPTIONS = {
     ("permission", "menu_id"): {"foreign_key_table": "menu", "foreign_key_field": "id"},
     ("permission", "group_id"): {"foreign_key_table": "user_group", "foreign_key_field": "id"},
     ("lookup_value", "lookup_id"): {"foreign_key_table": "lookup", "foreign_key_field": "id"},
+    ("report", "base_form_id"): {"foreign_key_table": "form", "foreign_key_field": "id"},
+    ("report_field", "report_id"): {"foreign_key_table": "report", "foreign_key_field": "id"},
+    ("report_field", "form_id"): {"foreign_key_table": "form", "foreign_key_field": "id"},
+    ("report_field", "form_field_id"): {"foreign_key_table": "form_field", "foreign_key_field": "id"},
 }
 
 
@@ -162,6 +189,7 @@ class BootstrapService:
                 )
 
         cls._ensure_system_menu_tree(root_group, form_by_table)
+        cls._ensure_seed_reports()
 
     @staticmethod
     def _ensure_root_group() -> UserGroup:
@@ -221,6 +249,7 @@ class BootstrapService:
 
         users_parent = cls._upsert_folder_menu(name="Users", parent_menu=system_menu, sort_order=1)
         forms_parent = cls._upsert_folder_menu(name="Forms", parent_menu=system_menu, sort_order=3)
+        reporting_parent = cls._upsert_folder_menu(name="Reporting", parent_menu=system_menu, sort_order=4)
 
         leaf_definitions = [
             ("Users", "user", users_parent, 1),
@@ -232,6 +261,8 @@ class BootstrapService:
             ("Fields", "form_field", forms_parent, 2),
             ("Lookups", "lookup", forms_parent, 3),
             ("Lookup Values", "lookup_value", forms_parent, 4),
+            ("Reports", "report", reporting_parent, 1),
+            ("Report Fields", "report_field", reporting_parent, 2),
         ]
 
         for menu_name, form_table_name, parent_menu, sort_order in leaf_definitions:
@@ -247,6 +278,56 @@ class BootstrapService:
         cls._upsert_root_group_permission(root_group, system_menu)
         cls._upsert_root_group_permission(root_group, users_parent)
         cls._upsert_root_group_permission(root_group, forms_parent)
+        cls._upsert_root_group_permission(root_group, reporting_parent)
+
+        generate_report_menu = cls._upsert_folder_menu(
+            name="Generate Report",
+            parent_menu=reporting_parent,
+            sort_order=3,
+        )
+        cls._upsert_root_group_permission(root_group, generate_report_menu)
+
+    @staticmethod
+    def _ensure_seed_reports() -> None:
+        inspector = inspect(get_engine())
+        if not inspector.has_table("report") or not inspector.has_table("report_field"):
+            return
+
+        base_form = Form.objects.filter(table_name="user").first()
+        permission_form = Form.objects.filter(table_name="permission").first()
+        if not base_form or not permission_form:
+            return
+
+        report, _ = Report.objects.update_or_create(
+            name="User Permissions Report",
+            defaults={
+                "description": "Displays user permissions",
+                "base_form": base_form,
+            },
+        )
+
+        target_fields: list[tuple[Form, str, int, str]] = [
+            (base_form, "username", 1, "Username"),
+            (permission_form, "can_view", 2, "Can View"),
+            (permission_form, "can_insert", 3, "Can Insert"),
+            (permission_form, "can_update", 4, "Can Update"),
+            (permission_form, "can_delete", 5, "Can Delete"),
+            (permission_form, "can_print", 6, "Can Print"),
+        ]
+
+        for form, field_name, display_order, display_name in target_fields:
+            form_field = FormField.objects.filter(form=form, name=field_name).first()
+            if not form_field:
+                continue
+            ReportField.objects.update_or_create(
+                report=report,
+                form_field=form_field,
+                defaults={
+                    "form": form,
+                    "display_order": display_order,
+                    "display_name": display_name,
+                },
+            )
 
     @staticmethod
     def _upsert_folder_menu(*, name: str, parent_menu: Menu | None, sort_order: int) -> Menu:

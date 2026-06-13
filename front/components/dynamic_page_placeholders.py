@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dash import dcc
 from dash import html
+import dash_ag_grid as dag
 import dash_mantine_components as dmc
 
 
@@ -24,6 +25,22 @@ def build_dynamic_page_placeholders() -> html.Div:
             # Mirror modal IDs so callbacks remain valid off the dynamic page route.
             dmc.Modal(id="insert-modal", opened=False, children=[]),
             dmc.Modal(id="edit-modal", opened=False, children=[]),
+            dmc.Select(id="report-selector", data=[], value=None),
+            dmc.TextInput(id="report-sort-by", value=""),
+            dmc.Select(id="report-sort-direction", data=[{"value": "asc", "label": "asc"}], value="asc"),
+            dmc.Textarea(id="report-filters-json", value="{}"),
+            dmc.NumberInput(id="report-page-size", value=100),
+            dmc.NumberInput(id="report-page", value=1),
+            html.Div(id="report-error"),
+            dcc.Store(id="report-result-store", data={"columns": [], "rows": [], "count": 0}),
+            dcc.Download(id="report-download"),
+            html.Div(id="report-count"),
+            dag.AgGrid(
+                id="report-grid",
+                rowData=[],
+                columnDefs=[],
+                dashGridOptions={"pagination": True},
+            ),
         ],
         style={"display": "none"},
     )
